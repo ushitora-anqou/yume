@@ -1,5 +1,10 @@
 (tests
- (names test_signature test_path_pattern test_ws test_http_client)
+ (names
+  test_signature
+  test_path_pattern
+  test_ws
+  test_http_client
+  test_http_server)
  (libraries
   alcotest
   cohttp
