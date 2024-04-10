@@ -1,0 +1,27 @@
+(library
+ (name yume)
+ (preprocess
+  (pps ppx_deriving.show ppx_deriving.make))
+ (libraries
+  base64
+  ca-certs
+  cohttp
+  cohttp-eio
+  cstruct
+  domain-name
+  eio
+  eio.core
+  eio.unix
+  logs
+  mirage-crypto
+  mirage-crypto-rng
+  multipart_form
+  multipart_form-eio
+  ptime
+  tls
+  tls-eio
+  unix
+  uri
+  websocket
+  x509
+  yojson))

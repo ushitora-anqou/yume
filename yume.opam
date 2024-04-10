@@ -1,0 +1,56 @@
+opam-version: "2.0"
+version: "0.1.0"
+synopsis: "Yet another Web framework based on Eio, inspired by Dream"
+description: "Yet another Web framework based on Eio, inspired by Dream"
+maintainer: ["Ushitora Anqou"]
+authors: ["Ushitora Anqou"]
+license: "MIT"
+tags: ["http" "https" "websocket"]
+homepage: "https://github.com/ushitora-anqou/yume"
+doc: "https://github.com/ushitora-anqou/yume"
+bug-reports: "https://github.com/ushitora-anqou/yume/issues"
+depends: [
+  "alcotest" {with-test}
+  "ca-certs"
+  "cohttp"
+  "cohttp-eio"
+  "dune" {>= "3.7"}
+  "eio"
+  "eio_main"
+  "logs"
+  "mirage-crypto-rng"
+  "mirage-crypto-rng-eio"
+  "multipart_form"
+  "multipart_form-eio"
+  "ocaml" {>= "5.1.0"}
+  "ocamlformat" {= "0.25.1" & with-dev-setup}
+  "odoc" {with-doc}
+  "ppx_deriving"
+  "tls"
+  "tls-eio"
+  "websocket"
+  "x509"
+  "yojson"
+]
+build: [
+  ["dune" "subst"] {dev}
+  [
+    "dune"
+    "build"
+    "-p"
+    name
+    "-j"
+    jobs
+    "@install"
+    "@runtest" {with-test}
+    "@doc" {with-doc}
+  ]
+]
+dev-repo: "git+https://github.com/ushitora-anqou/yume.git"
+pin-depends:[
+  [ "cohttp.6.0.0~alpha2" "git+https://github.com/mirage/ocaml-cohttp.git#v6.0.0_beta2" ]
+  [ "cohttp-eio.6.0.0~alpha2" "git+https://github.com/mirage/ocaml-cohttp.git#v6.0.0_beta2" ]
+  [ "websocket.2.16" "git+https://github.com/ushitora-anqou/ocaml-websocket#74988ec5ec7d7c620e7d58c5509acd003107c513" ]
+  [ "multipart_form.0.5.0" "git+https://github.com/dinosaure/multipart_form#a794239b8fc9601540ffea489b2c470227216c5e" ]
+  [ "multipart_form-eio.0.5.0" "git+https://github.com/dinosaure/multipart_form#a794239b8fc9601540ffea489b2c470227216c5e" ]
+]

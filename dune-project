@@ -1,0 +1,5 @@
+(lang dune 3.7)
+
+(implicit_transitive_deps false)
+
+(name yume)

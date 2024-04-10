@@ -1,0 +1,21 @@
+name: Run unit/integration tests
+
+on:
+  push:
+
+permissions: read-all
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tree
+        uses: actions/checkout@v4
+#     - name: Setup tmate session
+#       uses: mxschmitt/action-tmate@v3
+      - name: Set-up OCaml
+        uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-compiler: "5.1.1"
+      - run: opam install . --deps-only --with-test
+      - run: opam exec -- make test

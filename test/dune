@@ -1,0 +1,22 @@
+(tests
+ (names test_signature test_path_pattern test_ws test_http_client)
+ (libraries
+  alcotest
+  cohttp
+  cstruct
+  eio
+  eio.core
+  eio.unix
+  eio_main
+  fmt
+  logs
+  logs.fmt
+  mirage-crypto-rng
+  mirage-crypto-rng-eio
+  mirage-crypto-rng.unix
+  ptime
+  ptime.clock
+  ptime.clock.os
+  websocket
+  x509
+  yume))
