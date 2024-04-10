@@ -1,6 +1,6 @@
-let authenticator = Ca_certs.authenticator () |> Result.get_ok
+let default_authenticator = Ca_certs.authenticator () |> Result.get_ok
 
-let connect_via_tls url socket =
+let connect_via_tls ?(authenticator = default_authenticator) url socket =
   let tls_config = Tls.Config.client ~authenticator () in
   let host =
     Uri.host url
@@ -45,13 +45,15 @@ module Response = struct
     Eio.Buf_read.(parse_exn take_all) body ~max_size:max_int
 end
 
-let request ?headers ?body ~meth env ~sw (url : string) =
+let request ?headers ?body ?authenticator ~meth env ~sw (url : string) =
   let headers = headers |> Option.map Cohttp.Header.of_list in
   let body =
     body |> Option.map (function `Fixed src -> Cohttp_eio.Body.of_string src)
   in
   let client =
-    Cohttp_eio.Client.make ~https:(Some connect_via_tls) (Eio.Stdenv.net env)
+    Cohttp_eio.Client.make
+      ~https:(Some (connect_via_tls ?authenticator))
+      (Eio.Stdenv.net env)
   in
   let resp, body =
     Cohttp_eio.Client.call ~sw ?headers ?body client meth (Uri.of_string url)
@@ -63,7 +65,8 @@ let post = request ~meth:`POST
 let put = request ~meth:`PUT
 let delete = request ~meth:`DELETE
 
-let fetch env ?(headers = []) ?(meth = `GET) ?(body = "") ?(sign = None) url =
+let fetch env ?(headers = []) ?(meth = `GET) ?(body = "") ?(sign = None)
+    ?authenticator url =
   let path_query_fragment (u : Uri.t) =
     let res = Uri.path u in
     let res =
@@ -152,9 +155,11 @@ let fetch env ?(headers = []) ?(meth = `GET) ?(body = "") ?(sign = None) url =
     Eio.Switch.run @@ fun sw ->
     let resp =
       match meth with
-      | `GET | `DELETE -> request env ~sw ~headers ~meth (Uri.to_string uri)
+      | `GET | `DELETE ->
+          request env ~sw ~headers ~meth ?authenticator (Uri.to_string uri)
       | `POST | `PATCH ->
-          request env ~sw ~headers ~body:(`Fixed body) ~meth (Uri.to_string uri)
+          request env ~sw ~headers ~body:(`Fixed body) ~meth ?authenticator
+            (Uri.to_string uri)
       | _ -> failwith "Not implemented method"
     in
     let status = Response.status resp in
