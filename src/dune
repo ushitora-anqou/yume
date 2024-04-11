@@ -1,5 +1,6 @@
 (library
  (name yume)
+ (public_name yume)
  (preprocess
   (pps ppx_deriving.show ppx_deriving.make))
  (libraries
