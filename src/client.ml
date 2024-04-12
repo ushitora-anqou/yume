@@ -1,6 +1,11 @@
-let default_authenticator = Ca_certs.authenticator () |> Result.get_ok
+let default_authenticator = Ca_certs.authenticator ()
 
-let connect_via_tls ?(authenticator = default_authenticator) url socket =
+let connect_via_tls ?authenticator  url socket =
+  let authenticator =
+    match authenticator, default_authenticator with
+  | Some auth, _ | None, Ok auth -> auth
+    | _ -> failwith "tls certs authenticator not found"
+  in
   let tls_config = Tls.Config.client ~authenticator () in
   let host =
     Uri.host url
