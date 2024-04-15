@@ -1,9 +1,9 @@
 let default_authenticator = Ca_certs.authenticator ()
 
-let connect_via_tls ?authenticator  url socket =
+let connect_via_tls ?authenticator url socket =
   let authenticator =
-    match authenticator, default_authenticator with
-  | Some auth, _ | None, Ok auth -> auth
+    match (authenticator, default_authenticator) with
+    | Some auth, _ | None, Ok auth -> auth
     | _ -> failwith "tls certs authenticator not found"
   in
   let tls_config = Tls.Config.client ~authenticator () in
@@ -65,6 +65,7 @@ let request ?headers ?body ?authenticator ~meth env ~sw (url : string) =
   in
   Response.{ resp; body }
 
+let head = request ~meth:`HEAD
 let get = request ~meth:`GET
 let post = request ~meth:`POST
 let put = request ~meth:`PUT

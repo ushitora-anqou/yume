@@ -313,12 +313,19 @@ module Router = struct
         let param, handler =
           routes
           |> List.find_map (fun (meth', pat, handler) ->
-                 if req.meth <> meth' then None
+                 let matched =
+                   match (req.meth, meth') with
+                   | m1, m2 when m1 = m2 -> true
+                   | `HEAD, `GET -> true
+                   | _ -> false
+                 in
+                 if not matched then None
                  else
                    Path_pattern.perform ~pat req.path
                    |> Option.map (fun param -> (param, handler)))
           |> Option.value ~default:([], inner_handler)
         in
+        let truncate_body = req.meth = `HEAD in
         let req = Request { req with param } in
         let resp =
           try handler env req with
@@ -332,6 +339,11 @@ module Router = struct
                   m "Exception raised: %s\n%s" (Printexc.to_string e)
                     (Printexc.get_backtrace ()));
               respond ~status:`Internal_server_error ""
+        in
+        let resp =
+          match (truncate_body, resp) with
+          | false, _ | _, BareResponse _ -> resp
+          | true, Response r -> Response { r with body = "" }
         in
         match resp with
         | Response ({ status; tags; _ } as r) when Status.is_error status ->

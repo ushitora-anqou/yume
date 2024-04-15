@@ -31,6 +31,12 @@ let test_basics () =
         in
 
         let resp =
+          Yume.Client.head env ~sw
+            (Printf.sprintf "http://localhost:%d/" listening_port)
+        in
+        assert (Yume.Client.Response.status resp = `OK);
+
+        let resp =
           Yume.Client.get env ~sw
             (Printf.sprintf "http://localhost:%d/" listening_port)
         in
