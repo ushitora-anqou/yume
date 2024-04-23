@@ -32,13 +32,17 @@ let start_server ~listen ~sw env k callback =
             (Printexc.get_backtrace ()));
       respond ~status:`Internal_server_error ~body:"" ~headers:[]
   in
+  let on_error e =
+    Logs.err (fun m ->
+        m "Cohttp_eio.Server.run on_error triggered: %s" (Printexc.to_string e))
+  in
   let server = Cohttp_eio.Server.make_response_action ~callback () in
   let socket =
     Eio.Net.listen (Eio.Stdenv.net env) ~sw ~backlog:128 ~reuse_addr:true listen
   in
   Eio.Fiber.both
     (fun () -> k socket)
-    (fun () -> Cohttp_eio.Server.run ~on_error:raise socket server)
+    (fun () -> Cohttp_eio.Server.run ~on_error socket server)
 
 type ws_conn = {
   mutable frames_out_fn : (Websocket.Frame.t option -> unit) option;
