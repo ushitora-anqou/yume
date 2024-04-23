@@ -208,6 +208,13 @@ module Ws_conn_man = struct
     Eio.Fiber.fork ~sw (fun () ->
         let rec loop () =
           let req, callback, recv_stream = Eio.Stream.take global_runner.chan in
+          let callback conn =
+            try callback conn
+            with e ->
+              Logs.err (fun m ->
+                  m "websocket handler raised: %s: %s" (Printexc.to_string e)
+                    (Printexc.get_backtrace ()))
+          in
           let resp =
             match req with
             | Request { bare_req; _ } ->
