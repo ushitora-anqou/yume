@@ -172,7 +172,8 @@ let parse_body ~body ~headers =
         Eio.Stream.add in_stream (Bare_server.Body.to_string body);
         Eio.Switch.run @@ fun sw ->
         let th, out_stream =
-          Multipart_form_eio.stream ~sw ~identify:Fun.id in_stream content_type
+          Multipart_form_eio.stream ~bounds:max_int ~sw ~identify:Fun.id
+            in_stream content_type
         in
         match Eio.Promise.await_exn th with
         | _ -> load_formdata_from_stream out_stream

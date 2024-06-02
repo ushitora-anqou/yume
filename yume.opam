@@ -11,6 +11,7 @@ doc: "https://github.com/ushitora-anqou/yume"
 bug-reports: "https://github.com/ushitora-anqou/yume/issues"
 depends: [
   "alcotest" {with-test}
+  "base64"
   "ca-certs"
   "cohttp" {= "6.0.0~beta2"}
   "cohttp-eio" {= "6.0.0~beta2"}
