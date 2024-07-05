@@ -21,8 +21,8 @@ depends: [
   "logs"
   "mirage-crypto-rng"
   "mirage-crypto-rng-eio"
-  "multipart_form"
-  "multipart_form-eio"
+  "multipart_form" {>= "0.6.0"}
+  "multipart_form-eio" {>= "0.6.0"}
   "ocaml" {>= "5.1.0"}
   "ocamlformat" {= "0.25.1" & with-dev-setup}
   "odoc" {with-doc}
@@ -50,6 +50,4 @@ build: [
 dev-repo: "git+https://github.com/ushitora-anqou/yume.git"
 pin-depends:[
   [ "websocket.2.16" "git+https://github.com/ushitora-anqou/ocaml-websocket#74988ec5ec7d7c620e7d58c5509acd003107c513" ]
-  [ "multipart_form.0.5.0" "git+https://github.com/dinosaure/multipart_form#a794239b8fc9601540ffea489b2c470227216c5e" ]
-  [ "multipart_form-eio.0.5.0" "git+https://github.com/dinosaure/multipart_form#a794239b8fc9601540ffea489b2c470227216c5e" ]
 ]
