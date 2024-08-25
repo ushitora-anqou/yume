@@ -30,7 +30,7 @@ depends: [
   "tls"
   "tls-eio"
   "websocket"
-  "x509"
+  "x509" {= "0.16.5"}
   "yojson"
 ]
 build: [
