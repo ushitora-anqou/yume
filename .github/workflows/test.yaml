@@ -8,14 +8,16 @@ permissions: read-all
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ocaml_version: ["5.1.0", "5.1.1", "5.2.0"]
     steps:
       - name: Checkout tree
         uses: actions/checkout@v4
-#     - name: Setup tmate session
-#       uses: mxschmitt/action-tmate@v3
       - name: Set-up OCaml
         uses: ocaml/setup-ocaml@v2
         with:
-          ocaml-compiler: "5.1.1"
+          ocaml-compiler: ${{ matrix.ocaml_version }}
       - run: opam install . --deps-only --with-test
       - run: opam exec -- make test
