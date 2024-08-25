@@ -24,7 +24,7 @@ depends: [
   "multipart_form" {>= "0.6.0"}
   "multipart_form-eio" {>= "0.6.0"}
   "ocaml" {>= "5.1.0"}
-  "ocamlformat" {= "0.25.1" & with-dev-setup}
+  "ocamlformat" {= "0.26.2" & with-dev-setup}
   "odoc" {with-doc}
   "ppx_deriving"
   "tls"
