@@ -18,7 +18,7 @@ depends: [
   "digestif"
   "dune" {>= "3.7"}
   "eio"
-  "eio_main"
+  "eio_main" {with-test}
   "logs"
   "mirage-crypto-rng"
   "mirage-crypto-rng-eio"
