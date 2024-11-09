@@ -3,16 +3,16 @@ type public_key = X509.Public_key.t
 type keypair = private_key * public_key
 
 let encode_public_key (pub_key : public_key) : string =
-  X509.Public_key.encode_pem pub_key |> Cstruct.to_string
+  X509.Public_key.encode_pem pub_key
 
 let encode_private_key (priv_key : private_key) : string =
-  X509.Private_key.encode_pem priv_key |> Cstruct.to_string
+  X509.Private_key.encode_pem priv_key
 
 let decode_private_key (src : string) : private_key =
-  src |> Cstruct.of_string |> X509.Private_key.decode_pem |> Result.get_ok
+  src |> X509.Private_key.decode_pem |> Result.get_ok
 
 let decode_public_key (src : string) : public_key =
-  src |> Cstruct.of_string |> X509.Public_key.decode_pem |> Result.get_ok
+  src |> X509.Public_key.decode_pem |> Result.get_ok
 
 type signature_header = {
   key_id : string;
@@ -66,8 +66,8 @@ let may_cons_digest_header ?(prefix = "SHA-256") (headers : Headers.t)
   body
   |> Option.fold ~none:headers ~some:(fun body ->
          let digest =
-           body |> Cstruct.of_string |> Mirage_crypto.Hash.SHA256.digest
-           |> Cstruct.to_string |> Base64.encode_exn
+           body |> Digestif.SHA256.digest_string
+           |> Digestif.SHA256.to_raw_string |> Base64.encode_exn
          in
          let digest = prefix ^ "=" ^ digest in
          match List.assoc_opt `Digest headers with
@@ -86,9 +86,9 @@ let sign ~(priv_key : private_key) ~(key_id : string)
   let signature =
     match
       X509.Private_key.sign `SHA256 priv_key ~scheme:`RSA_PKCS1
-        (`Message (Cstruct.of_string signing_string))
+        (`Message signing_string)
     with
-    | Ok s -> Cstruct.to_string s |> Base64.encode_exn
+    | Ok s -> Base64.encode_exn s
     | Error (`Msg s) -> failwith ("Sign error: " ^ s)
   in
   let sig_header =
@@ -124,6 +124,5 @@ let verify ~(pub_key : public_key) ~(algorithm : string)
       build_signing_string ~signed_headers ~headers ~meth ~path
     in
     X509.Public_key.verify `SHA256 ~scheme:`RSA_PKCS1
-      ~signature:(signature |> Base64.decode_exn |> Cstruct.of_string)
-      pub_key
-      (`Message (Cstruct.of_string signing_string))
+      ~signature:(signature |> Base64.decode_exn)
+      pub_key (`Message signing_string)

@@ -1,9 +1,9 @@
 open struct
-  let random_string len = Mirage_crypto_rng.generate len |> Cstruct.to_string
+  let random_string len = Mirage_crypto_rng.generate len
 
   let b64_encoded_sha1sum s =
-    s |> Cstruct.of_string |> Mirage_crypto.Hash.SHA1.digest
-    |> Cstruct.to_string |> Base64.encode_exn
+    s |> Digestif.SHA1.digest_string |> Digestif.SHA1.to_raw_string
+    |> Base64.encode_exn
 end
 
 open Websocket.Make (Cohttp_eio.Private.IO)

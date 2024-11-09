@@ -15,6 +15,7 @@ depends: [
   "ca-certs"
   "cohttp" {= "6.0.0~beta2"}
   "cohttp-eio" {= "6.0.0~beta2"}
+  "digestif"
   "dune" {>= "3.7"}
   "eio"
   "eio_main"
@@ -29,8 +30,8 @@ depends: [
   "ppx_deriving"
   "tls"
   "tls-eio"
-  "websocket"
-  "x509" {= "0.16.5"}
+  "websocket" {>= "2.17"}
+  "x509"
   "yojson"
 ]
 build: [
@@ -48,6 +49,3 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/ushitora-anqou/yume.git"
-pin-depends:[
-  [ "websocket.2.16" "git+https://github.com/ushitora-anqou/ocaml-websocket#74988ec5ec7d7c620e7d58c5509acd003107c513" ]
-]

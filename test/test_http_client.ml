@@ -41,8 +41,7 @@ let test_get_with_custom_cert () =
   in
   Fun.protect ~finally:(fun () -> close_in ic) @@ fun () ->
   let cert =
-    ic |> In_channel.input_all |> Cstruct.of_string
-    |> X509.Certificate.decode_pem |> Result.get_ok
+    ic |> In_channel.input_all |> X509.Certificate.decode_pem |> Result.get_ok
   in
   let t, _, _ = Ptime.of_rfc3339 "2016-08-01T21:00:00Z" |> Result.get_ok in
   let authenticator =

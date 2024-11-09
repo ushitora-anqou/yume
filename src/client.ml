@@ -6,7 +6,11 @@ let connect_via_tls ?authenticator url socket =
     | Some auth, _ | None, Ok auth -> auth
     | _ -> failwith "tls certs authenticator not found"
   in
-  let tls_config = Tls.Config.client ~authenticator () in
+  let tls_config =
+    match Tls.Config.client ~authenticator () with
+    | Ok c -> c
+    | Error (`Msg msg) -> failwith ("tls configuration is invalid: " ^ msg)
+  in
   let host =
     Uri.host url
     |> Option.map (fun x -> Domain_name.(host_exn (of_string_exn x)))

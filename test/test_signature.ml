@@ -27,8 +27,7 @@ date: Sun, 05 Jan 2014 21:31:40 GMT
 let test_verify () =
   let pub_key =
     X509.Public_key.decode_pem
-    @@ Cstruct.of_string
-         {|
+      {|
 -----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4XhCcviDkcNrTyJHrqZZ
 xO7huHxJ/RopvHLA3sa8a7LB121TVfP0id861XCSu1Tr5MIkhjjsIsEhBfqIm+bn
@@ -79,8 +78,7 @@ QwIDAQAB
 let test_sign () =
   let pub_key =
     X509.Public_key.decode_pem
-    @@ Cstruct.of_string
-         {|
+      {|
 -----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4XhCcviDkcNrTyJHrqZZ
 xO7huHxJ/RopvHLA3sa8a7LB121TVfP0id861XCSu1Tr5MIkhjjsIsEhBfqIm+bn
@@ -95,8 +93,7 @@ QwIDAQAB
   in
   let priv_key =
     X509.Private_key.decode_pem
-    @@ Cstruct.of_string
-         {|-----BEGIN RSA PRIVATE KEY-----
+      {|-----BEGIN RSA PRIVATE KEY-----
 MIIEpQIBAAKCAQEA4XhCcviDkcNrTyJHrqZZxO7huHxJ/RopvHLA3sa8a7LB121T
 VfP0id861XCSu1Tr5MIkhjjsIsEhBfqIm+bnGxnZtD47XpAM7fvspFbgm9sWjG6X
 KxDRkxmpn61gwU75tn9W9pm9DwCmeyj2OnB3LH0qePxLndozbLExqlbUXAaK+1eb
