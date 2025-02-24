@@ -20,8 +20,8 @@ depends: [
   "eio"
   "eio_main" {with-test}
   "logs"
-  "mirage-crypto-rng"
-  "mirage-crypto-rng-eio"
+  "mirage-crypto-rng" {< "2.0.0"}
+  "mirage-crypto-rng-eio" {< "1.2.0"}
   "multipart_form" {>= "0.6.0"}
   "multipart_form-eio" {>= "0.6.0"}
   "ocaml" {>= "5.1.0"}
