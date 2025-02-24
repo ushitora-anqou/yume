@@ -17,7 +17,9 @@ end
 let respond ~(status : Status.t) ~(headers : Headers.t) ~(body : string) =
   let headers = headers |> Headers.to_list |> Cohttp.Header.of_list in
   `Response
-    (Http.Response.make ~status ~headers (), Cohttp_eio.Body.of_string body)
+    (Cohttp_eio.Server.respond ~status ~headers
+       ~body:(Cohttp_eio.Body.of_string body)
+       ())
 
 let start_server ~listen ~sw env k callback =
   let callback _conn (req : Request.t) (body : Body.t) =

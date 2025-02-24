@@ -17,7 +17,7 @@ module Client = struct
   }
 
   let drain_handshake req ic oc nonce =
-    Request.write (fun _ -> ()) req oc;
+    Request.write ~flush:true (fun _ -> ()) req oc;
     let resp =
       match Response.read ic with
       | `Ok r -> r
@@ -149,8 +149,7 @@ module Server = struct
     in
     let resp =
       Cohttp.Response.make ~status:`Switching_protocols
-        ~encoding:Cohttp.Transfer.Unknown ~headers:response_headers ~flush:true
-        ()
+        ~encoding:Cohttp.Transfer.Unknown ~headers:response_headers ()
     in
     let frames_out_stream = Eio.Stream.create 10 in
     let frames_out_fn = Eio.Stream.add frames_out_stream in
