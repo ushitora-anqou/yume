@@ -27,3 +27,8 @@ setup.log
 
 # Local OPAM switch
 _opam/
+
+# Written for Yume
+.direnv
+.envrc
+result
