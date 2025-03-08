@@ -241,8 +241,12 @@ let start_server env ~sw ?(listen = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080))
     ?error_handler (handler : handler) k : unit =
   Ws_conn_man.start_global_runner env ~sw;
   Bare_server.start_server ~listen env ~sw k
-  @@ fun (req : Bare_server.Request.t) (body : Bare_server.Body.t) :
-    Bare_server.Response.t ->
+  @@
+  fun (req : Bare_server.Request.t)
+    (body : Bare_server.Body.t)
+    :
+    Bare_server.Response.t
+  ->
   (* Parse req *)
   let uri = Bare_server.Request.uri req in
   let meth = Bare_server.Request.meth req in
@@ -284,7 +288,8 @@ let start_server env ~sw ?(listen = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080))
            || not (Status.is_error status)
            (* - error_handler is already called;
               - error_handler is not specified; or
-              - not erroneous response *) ->
+              - not erroneous response *)
+      ->
         Bare_server.respond ~status ~headers ~body
     | Response { status; headers; body; _ } ->
         let error_handler = Option.get error_handler in
