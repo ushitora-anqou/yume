@@ -12,8 +12,8 @@ depends: [
   "alcotest" {with-test}
   "base64"
   "ca-certs"
-  "cohttp" {= "6.0.0"}
-  "cohttp-eio" {= "6.0.0"}
+  "cohttp" {>= "6.0.0"}
+  "cohttp-eio" {>= "6.0.0"}
   "digestif"
   "dune" {>= "3.7"}
   "eio"
@@ -24,8 +24,6 @@ depends: [
   "multipart_form" {>= "0.6.0"}
   "multipart_form-eio" {>= "0.6.0"}
   "ocaml" {>= "5.1.0"}
-  "ocaml-lsp-server" {with-dev-setup}
-  "ocamlformat" {= "0.26.2" & with-dev-setup}
   "odoc" {with-doc}
   "ppx_deriving"
   "tls"
