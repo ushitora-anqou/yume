@@ -1,5 +1,4 @@
 opam-version: "2.0"
-version: "0.1.0"
 synopsis: "Yet another Web framework based on Eio, inspired by Dream"
 description: "Yet another Web framework based on Eio, inspired by Dream"
 maintainer: ["Ushitora Anqou"]
