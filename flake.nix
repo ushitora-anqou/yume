@@ -1,14 +1,29 @@
 {
   inputs = {
-    opam-nix.url = "github:tweag/opam-nix";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    nixpkgs.follows = "opam-nix/nixpkgs";
+
+    opam-nix = {
+      url = "github:tweag/opam-nix";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        flake-utils.follows = "flake-utils";
+        opam-repository.follows = "opam-repository";
+      };
+    };
+
+    opam-repository = {
+      url = "github:ocaml/opam-repository";
+      flake = false;
+    };
   };
+
   outputs = {
     self,
     flake-utils,
     opam-nix,
     nixpkgs,
+    opam-repository,
   } @ inputs:
     flake-utils.lib.eachDefaultSystem (
       system: let
@@ -47,21 +62,28 @@
           }
           ./.
           query;
-        overlay = final: prev: (
-          # disable library's test and doc
-          # cf. https://nymphium.github.io/2023/05/06/purely-functioinal-ocaml-development.html
-          with builtins;
-            mapAttrs
-            (p: _:
-              if hasAttr "passthru" prev.${p} && hasAttr "pkgdef" prev.${p}.passthru
-              then
-                prev.${p}.overrideAttrs (_: {
-                  opam__with_test = "false";
-                  opam__with_doc = "false";
-                })
-              else prev.${p})
-            prev
-        );
+        overlay = final: prev:
+          (
+            # disable library's test and doc
+            # cf. https://nymphium.github.io/2023/05/06/purely-functioinal-ocaml-development.html
+            with builtins;
+              mapAttrs
+              (p: _:
+                if hasAttr "passthru" prev.${p} && hasAttr "pkgdef" prev.${p}.passthru
+                then
+                  prev.${p}.overrideAttrs (_: {
+                    opam__with_test = "false";
+                    opam__with_doc = "false";
+                  })
+                else prev.${p})
+              prev
+          )
+          // {
+            utop = prev.utop.overrideAttrs (previousAttrs: {
+              # cf. https://github.com/tweag/opam-nix/issues/112#issuecomment-2693392340
+              sourceRoot = ".";
+            });
+          };
         scope' = scope.overrideScope overlay;
         # Packages from devPackagesQuery
         devPackages = builtins.attrValues (pkgs.lib.getAttrs (builtins.attrNames devPackagesQuery) scope');
@@ -72,7 +94,7 @@
 
         legacyPackages = scope';
 
-        packages = packages // { default = packages.yume; };
+        packages = packages // {default = packages.yume;};
 
         devShells.default = pkgs.mkShell {
           inputsFrom = builtins.attrValues packages;
