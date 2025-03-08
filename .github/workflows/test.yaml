@@ -1,23 +1,25 @@
 name: Run unit/integration tests
 
 on:
+  pull_request:
   push:
+    branches:
+      - master
 
 permissions: read-all
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        ocaml_version: ["5.1.0", "5.1.1", "5.2.0"]
     steps:
       - name: Checkout tree
         uses: actions/checkout@v4
-      - name: Set-up OCaml
-        uses: ocaml/setup-ocaml@v3
+      - uses: cachix/install-nix-action@v27
         with:
-          ocaml-compiler: ${{ matrix.ocaml_version }}
-      - run: opam install . --deps-only --with-test
-      - run: opam exec -- make test
+          nix_path: nixpkgs=channel:nixos-unstable
+      #- uses: cachix/cachix-action@v14
+      #  with:
+      #    name: waq
+      #    authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+      - uses: nicknovitski/nix-develop@v1
+      - run: make test
