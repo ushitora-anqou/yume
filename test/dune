@@ -18,7 +18,6 @@
   logs
   logs.fmt
   mirage-crypto-rng
-  mirage-crypto-rng-eio
   mirage-crypto-rng.unix
   ptime
   ptime.clock
