@@ -4,8 +4,7 @@ let test_basic () =
   let recv_text = ref "" in
   let expected_string = "TEST TEXT" in
   Eio_main.run (fun env ->
-      Mirage_crypto_rng_eio.run (module Mirage_crypto_rng.Fortuna) env
-      @@ fun () ->
+      Mirage_crypto_rng_unix.use_default ();
       try
         Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
         let handler =

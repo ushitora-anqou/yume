@@ -1,6 +1,6 @@
 let test_get () =
   Eio_main.run @@ fun env ->
-  Mirage_crypto_rng_eio.run (module Mirage_crypto_rng.Fortuna) env @@ fun () ->
+  Mirage_crypto_rng_unix.use_default ();
   [
     "https://test-ev-rsa.ssl.com/";
     "https://test-dv-rsa.ssl.com/";
@@ -48,7 +48,7 @@ let test_get_with_custom_cert () =
     X509.Authenticator.chain_of_trust ~time:(fun () -> Some t) [ cert ]
   in
   Eio_main.run @@ fun env ->
-  Mirage_crypto_rng_eio.run (module Mirage_crypto_rng.Fortuna) env @@ fun () ->
+  Mirage_crypto_rng_unix.use_default ();
   Yume.Client.fetch ~authenticator env "https://expired-rsa-dv.ssl.com/"
   |> Result.get_ok |> ignore
 
