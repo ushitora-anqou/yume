@@ -9,3 +9,7 @@ test:
 .PHONY: setup-dev
 setup-dev:
 	opam install . --deps-only --with-test --with-dev-setup
+
+.PHONY: fmt
+fmt:
+	dune fmt
