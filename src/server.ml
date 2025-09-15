@@ -358,7 +358,7 @@ module Router = struct
                     (Printexc.get_backtrace ()));
               respond ~status ~tags:[ "log" ] body
           | e ->
-              Logs.debug (fun m ->
+              Logs.err (fun m ->
                   m "Exception raised: %s\n%s" (Printexc.to_string e)
                     (Printexc.get_backtrace ()));
               respond ~status:`Internal_server_error ""
