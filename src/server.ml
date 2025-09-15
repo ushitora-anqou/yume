@@ -159,7 +159,7 @@ let load_formdata_from_stream out_stream =
   in
   save_part [] []
 
-let parse_body ~body ~headers =
+let parse_body' content_length body headers =
   let content_type = List.assoc_opt `Content_type headers in
   match
     content_type
@@ -179,7 +179,8 @@ let parse_body ~body ~headers =
         in
 
         let in_stream = Eio.Stream.create 1 in
-        Eio.Stream.add in_stream (Bare_server.Body.to_string body);
+        Eio.Stream.add in_stream
+          (Bare_server.Body.to_string content_length body);
         Eio.Switch.run @@ fun sw ->
         let th, out_stream =
           Multipart_form_eio.stream ~bounds:max_int ~sw ~identify:Fun.id
@@ -191,12 +192,19 @@ let parse_body ~body ~headers =
       in
       (None, MultipartFormdata { loaded = load_body () })
   | Some "application/json" -> (
-      let raw_body = Bare_server.Body.to_string body in
+      let raw_body = Bare_server.Body.to_string content_length body in
       ( Some raw_body,
         try JSON (Yojson.Safe.from_string raw_body) with _ -> Form [] ))
   | Some "application/x-www-form-urlencoded" | _ ->
-      let raw_body = Bare_server.Body.to_string body in
+      let raw_body = Bare_server.Body.to_string content_length body in
       (Some raw_body, Form (Uri.query_of_encoded raw_body))
+
+let parse_body ~body ~headers =
+  match
+    Option.bind (List.assoc_opt `Content_length headers) int_of_string_opt
+  with
+  | None -> (Some "", Form [])
+  | Some content_length -> parse_body' content_length body headers
 
 let default_handler : handler =
  fun _env -> function
@@ -268,7 +276,9 @@ let start_server env ~sw ?(listen = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080))
   let lazy_parsed_body =
     lazy
       (match parse_body ~body ~headers with
-      | exception _ -> (None, None)
+      | exception e ->
+          Logs.debug (fun m -> m "parse_body failed: %s" (Printexc.to_string e));
+          (None, None)
       | raw_body, parsed_body -> (raw_body, Some parsed_body))
   in
   let req =

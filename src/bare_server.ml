@@ -11,7 +11,12 @@ end
 module Body = struct
   include Cohttp_eio.Body
 
-  let to_string body = Eio.Buf_read.(parse_exn take_all) body ~max_size:max_int
+  let to_string max_size body =
+    if max_size = 0 then ""
+    else
+      Eio.Buf_read.(parse_exn take_all)
+        body
+        ~max_size:(max_size + 1 (* take_all needs an extra byte *))
 end
 
 let respond ~(status : Status.t) ~(headers : Headers.t) ~(body : string) =
