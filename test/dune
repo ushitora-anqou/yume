@@ -24,4 +24,5 @@
   ptime.clock.os
   websocket
   x509
-  yume))
+  yume
+  yojson))

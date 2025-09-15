@@ -43,6 +43,16 @@ let raise_error_response ?(body = "") status =
 let respond ?(status = `OK) ?(headers = []) ?(tags = []) (body : string) =
   Response { status; headers; body; tags }
 
+let respond_html ?status ?(headers = []) ?tags s =
+  respond ?status ?tags
+    ~headers:((`Content_type, "text/html; charset=utf-8") :: headers)
+    s
+
+let respond_yojson ?status ?(headers = []) ?tags y =
+  Yojson.Safe.to_string y
+  |> respond ?status ?tags
+       ~headers:((`Content_type, "application/json; charset=utf-8") :: headers)
+
 let body = function
   | Request { body; _ } -> (
       match Lazy.force body with

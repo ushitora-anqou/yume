@@ -95,6 +95,7 @@ exception Exit_normally
 
 let test_basics () =
   let expected_get_response = "response test text" in
+  let expected_get_json_response = `Assoc [ ("hello", `String "world") ] in
 
   Eio_main.run @@ fun env ->
   Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
@@ -103,7 +104,8 @@ let test_basics () =
     Router.(
       use
         [
-          get "/" (fun _ _ -> respond expected_get_response);
+          get "/" (fun _ _ -> respond_html expected_get_response);
+          get "/json" (fun _ _ -> respond_yojson expected_get_json_response);
           post "/" (fun _ req -> (* echo *) query "msg" req |> respond);
         ])
       default_handler
@@ -134,6 +136,14 @@ let test_basics () =
         assert (Yume.Client.Response.status resp = `OK);
         let body = Yume.Client.Response.drain resp in
         assert (body = expected_get_response);
+
+        let resp =
+          Yume.Client.get env ~sw
+            (Printf.sprintf "http://localhost:%d/json" listening_port)
+        in
+        assert (Yume.Client.Response.status resp = `OK);
+        let body = Yume.Client.Response.drain resp |> Yojson.Safe.from_string in
+        assert (body = expected_get_json_response);
 
         let resp =
           Yume.Client.post env ~sw
