@@ -13,7 +13,9 @@
     };
 
     opam-repository = {
-      url = "github:ocaml/opam-repository";
+      # we can't use the latest commit due the following issue:
+      # cf. https://github.com/ocaml/opam-repository/issues/28541
+      url = "github:ocaml/opam-repository/126dc1f66178250df905ffc519cd0e139d789464";
       flake = false;
     };
   };
