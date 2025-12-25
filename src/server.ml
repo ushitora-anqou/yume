@@ -432,6 +432,13 @@ module Cors = struct
       src |> List.map (fun (r : t) -> Router.options r.target (handler r))
     in
 
+    let make_cors_headers { origin; expose; _ } headers =
+      (`Access_control_allow_origin, origin)
+      :: ( `Access_control_expose_headers,
+           expose |> List.map Header.string_of_name |> String.concat ", " )
+      :: headers
+    in
+
     (* Construct router *)
     Router.use routes
       (fun env -> function
@@ -445,18 +452,25 @@ module Cors = struct
             in
             let resp = inner_handler env req in
             match (resp, path_match) with
-            | _, None | BareResponse _, _ -> resp
-            | Response res, Some { origin; expose; _ } ->
+            | _, None -> resp
+            | BareResponse (`Expert (expert_resp, handler)), Some path_match ->
+                BareResponse
+                  (`Expert
+                     ( {
+                         expert_resp with
+                         headers =
+                           expert_resp.headers |> Http.Header.to_list
+                           |> Headers.of_list
+                           |> make_cors_headers path_match
+                           |> Headers.to_list |> Http.Header.of_list;
+                       },
+                       handler ))
+            | BareResponse _, _ -> resp
+            | Response res, Some path_match ->
                 Response
                   {
                     res with
-                    headers =
-                      (`Access_control_allow_origin, origin)
-                      :: ( `Access_control_expose_headers,
-                           expose
-                           |> List.map Header.string_of_name
-                           |> String.concat ", " )
-                      :: res.headers;
+                    headers = make_cors_headers path_match res.headers;
                   }))
       env req
 end

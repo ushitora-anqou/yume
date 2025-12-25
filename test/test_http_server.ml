@@ -219,6 +219,73 @@ let test_formdata_image image_data () =
         Eio.Switch.fail sw Exit_normally)
   with Exit_normally -> ()
 
+let test_cors_allow_all () =
+  Eio_main.run @@ fun env ->
+  Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
+  let handler =
+    let open Yume.Server in
+    Cors.(
+      use
+        [
+          make "/*" ~methods:[ `POST; `PUT; `DELETE; `GET; `PATCH; `OPTIONS ] ();
+        ])
+    @@ Router.(
+         use
+           [
+             get "/" (fun _ _ -> respond_html "hello");
+             get "/expert" (fun _ _ ->
+                 let resp = Http.Response.make () in
+                 let handler _ oc = Eio.Buf_write.string oc "hello" in
+                 BareResponse (`Expert (resp, handler)));
+           ])
+         default_handler
+  in
+  let listen =
+    Eio.Net.getaddrinfo_stream ~service:"0" env#net "localhost" |> List.hd
+  in
+  try
+    Eio.Switch.run @@ fun sw ->
+    Yume.Server.start_server env ~sw ~listen ~error_handler handler
+      (fun socket ->
+        let listening_port =
+          match Eio.Net.listening_addr socket with
+          | `Tcp (_, port) -> port
+          | _ -> assert false
+        in
+
+        let test_options path =
+          let resp =
+            Yume.Client.request ~meth:`OPTIONS env ~sw
+              (Printf.sprintf "http://localhost:%d%s" listening_port path)
+          in
+          assert (Yume.Client.Response.status resp = `No_content);
+          let hs = Yume.Client.Response.headers resp in
+          assert (List.assoc `Access_control_allow_origin hs = "*");
+          assert (
+            List.assoc `Access_control_allow_methods hs
+            = "POST, PUT, DELETE, GET, PATCH, OPTIONS");
+          ()
+        in
+        test_options "/";
+        test_options "/expert";
+
+        let test_get path =
+          let resp =
+            Yume.Client.get env ~sw
+              (Printf.sprintf "http://localhost:%d%s" listening_port path)
+          in
+          assert (Yume.Client.Response.status resp = `OK);
+          let hs = Yume.Client.Response.headers resp in
+          assert (List.assoc `Access_control_allow_origin hs = "*");
+          assert (List.assoc `Access_control_expose_headers hs = "");
+          ()
+        in
+        test_get "/";
+        test_get "/expert";
+
+        Eio.Switch.fail sw Exit_normally)
+  with Exit_normally -> ()
+
 let () =
   let open Alcotest in
   Common.setup_logs ();
@@ -230,4 +297,5 @@ let () =
           test_case "small image" `Quick (test_formdata_image test_image);
           test_case "large image" `Quick (test_formdata_image test_image_large);
         ] );
+      ("cors", [ test_case "allow all" `Quick test_cors_allow_all ]);
     ]

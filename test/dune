@@ -9,6 +9,7 @@
   alcotest
   base64
   cohttp
+  cohttp-eio
   cstruct
   eio
   eio.core
