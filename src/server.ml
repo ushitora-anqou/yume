@@ -133,7 +133,7 @@ let meth = function Request { meth; _ } -> meth
 let load_formdata_from_stream out_stream =
   let open Multipart_form in
   let rec save_part loaded raw =
-    match Eio.Stream.take_nonblocking out_stream with
+    match Eio.Stream.take out_stream with
     | None -> loaded
     | Some (_, hdr, contents) ->
         let loaded =
@@ -143,7 +143,7 @@ let load_formdata_from_stream out_stream =
           let filename = Content_disposition.filename cd in
           let buf = Buffer.create 0 in
           let rec loop () =
-            match Eio.Stream.take_nonblocking contents with
+            match Eio.Stream.take contents with
             | None -> ()
             | Some s ->
                 Buffer.add_string buf s;
@@ -178,17 +178,12 @@ let parse_body' content_length body headers =
           | Error (`Msg _msg) -> raise_error_response `Bad_request
         in
 
-        let in_stream = Eio.Stream.create 1 in
-        Eio.Stream.add in_stream
-          (Bare_server.Body.to_string content_length body);
         Eio.Switch.run @@ fun sw ->
-        let th, out_stream =
-          Multipart_form_eio.stream ~bounds:max_int ~sw ~identify:Fun.id
-            in_stream content_type
+        let _, out_stream =
+          Multipart_form_eio.stream ~bounds:max_int ~sw ~identify:Fun.id body
+            content_type
         in
-        match Eio.Promise.await_exn th with
-        | _ -> load_formdata_from_stream out_stream
-        | exception _ -> raise_error_response `Bad_request
+        load_formdata_from_stream out_stream
       in
       (None, MultipartFormdata { loaded = load_body () })
   | Some "application/json" -> (
