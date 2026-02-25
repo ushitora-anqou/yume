@@ -8,7 +8,7 @@ let test_get () =
     "https://test-dv-ecc.ssl.com/";
   ]
   |> List.map (fun url () ->
-         Yume.Client.fetch env url |> Result.get_ok |> ignore)
+      Yume.Client.fetch env url |> Result.get_ok |> ignore)
   |> Eio.Fiber.all;
 
   [
@@ -18,7 +18,7 @@ let test_get () =
     "https://expired-ecc-ev.ssl.com/";
   ]
   |> List.map (fun url () ->
-         Yume.Client.fetch env url |> Result.get_error |> ignore)
+      Yume.Client.fetch env url |> Result.get_error |> ignore)
   |> Eio.Fiber.all;
 
   (*

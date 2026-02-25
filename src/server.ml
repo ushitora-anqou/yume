@@ -164,7 +164,7 @@ let parse_body' content_length body headers =
   match
     content_type
     |> Option.map (fun s ->
-           s |> String.split_on_char ';' |> List.hd |> String.trim)
+        s |> String.split_on_char ';' |> List.hd |> String.trim)
   with
   | Some "multipart/form-data" ->
       (* FIXME: Currenty all contents are stored on memory.
@@ -330,10 +330,9 @@ module Router = struct
       let rec aux (spec : spec) : route list =
         spec
         |> List.map (function
-             | Route r -> [ r ]
-             | Scope (name, spec) ->
-                 aux spec
-                 |> List.map (fun (meth, uri, h) -> (meth, name ^ uri, h)))
+          | Route r -> [ r ]
+          | Scope (name, spec) ->
+              aux spec |> List.map (fun (meth, uri, h) -> (meth, name ^ uri, h)))
         |> List.flatten
       in
       aux spec
@@ -346,16 +345,16 @@ module Router = struct
         let param, handler =
           routes
           |> List.find_map (fun (meth', pat, handler) ->
-                 let matched =
-                   match (req.meth, meth') with
-                   | m1, m2 when m1 = m2 -> true
-                   | `HEAD, `GET -> true
-                   | _ -> false
-                 in
-                 if not matched then None
-                 else
-                   Path_pattern.perform ~pat req.path
-                   |> Option.map (fun param -> (param, handler)))
+              let matched =
+                match (req.meth, meth') with
+                | m1, m2 when m1 = m2 -> true
+                | `HEAD, `GET -> true
+                | _ -> false
+              in
+              if not matched then None
+              else
+                Path_pattern.perform ~pat req.path
+                |> Option.map (fun param -> (param, handler)))
           |> Option.value ~default:([], inner_handler)
         in
         let truncate_body = req.meth = `HEAD in
@@ -422,7 +421,7 @@ module Cors = struct
             req.headers
             |> List.assoc_opt `Access_control_request_headers
             |> Option.fold ~none:headers ~some:(fun v ->
-                   (`Access_control_allow_headers, v) :: headers)
+                (`Access_control_allow_headers, v) :: headers)
       in
       respond ~status:`No_content ~headers ""
     in
@@ -448,7 +447,7 @@ module Cors = struct
             let path_match =
               src
               |> List.find_opt (fun { target_pat; _ } ->
-                     Path_pattern.perform ~pat:target_pat path |> Option.is_some)
+                  Path_pattern.perform ~pat:target_pat path |> Option.is_some)
             in
             let resp = inner_handler env req in
             match (resp, path_match) with
@@ -493,9 +492,9 @@ module Logger = struct
         in
         raw_body
         |> Option.iter (fun s ->
-               add_string buf "\n";
-               add_string buf s;
-               add_string buf "\n");
+            add_string buf "\n";
+            add_string buf s;
+            add_string buf "\n");
         add_string buf "\n==============================\n";
         add_string buf ("Status: " ^ Status.to_string status);
         Buffer.contents buf

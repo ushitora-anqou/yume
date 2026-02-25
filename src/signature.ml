@@ -45,35 +45,35 @@ let build_signing_string ~(signed_headers : string list) ~(headers : Headers.t)
   let meth = Method.to_string meth |> String.lowercase_ascii in
   signed_headers
   |> List.map (function
-       | "(request-target)" -> "(request-target): " ^ meth ^ " " ^ path
-       | "(created)" | "(expires)" -> failwith "Not implemented"
-       | header ->
-           let values =
-             pseudo_headers
-             |> List.filter_map (function
-                  | k, v when k = header -> Some v
-                  | _ -> None)
-           in
-           if List.length values = 0 then
-             failwith ("Specified signed header not found: " ^ header)
-           else
-             let value = values |> String.concat ", " in
-             header ^ ": " ^ value)
+    | "(request-target)" -> "(request-target): " ^ meth ^ " " ^ path
+    | "(created)" | "(expires)" -> failwith "Not implemented"
+    | header ->
+        let values =
+          pseudo_headers
+          |> List.filter_map (function
+            | k, v when k = header -> Some v
+            | _ -> None)
+        in
+        if List.length values = 0 then
+          failwith ("Specified signed header not found: " ^ header)
+        else
+          let value = values |> String.concat ", " in
+          header ^ ": " ^ value)
   |> String.concat "\n"
 
 let may_cons_digest_header ?(prefix = "SHA-256") (headers : Headers.t)
     (body : string option) : Headers.t =
   body
   |> Option.fold ~none:headers ~some:(fun body ->
-         let digest =
-           body |> Digestif.SHA256.digest_string
-           |> Digestif.SHA256.to_raw_string |> Base64.encode_exn
-         in
-         let digest = prefix ^ "=" ^ digest in
-         match List.assoc_opt `Digest headers with
-         | Some v when v <> digest -> failwith "Digest not match"
-         | Some _ -> headers
-         | _ -> headers |> List.cons (`Digest, digest))
+      let digest =
+        body |> Digestif.SHA256.digest_string |> Digestif.SHA256.to_raw_string
+        |> Base64.encode_exn
+      in
+      let digest = prefix ^ "=" ^ digest in
+      match List.assoc_opt `Digest headers with
+      | Some v when v <> digest -> failwith "Digest not match"
+      | Some _ -> headers
+      | _ -> headers |> List.cons (`Digest, digest))
 
 let sign ~(priv_key : private_key) ~(key_id : string)
     ~(signed_headers : string list) ~(headers : Headers.t) ~(meth : Method.t)
@@ -102,9 +102,9 @@ let parse_signature_header (src : string) : signature_header =
   let fields =
     src |> String.split_on_char ','
     |> List.map (fun s ->
-           let pos = String.index s '=' in
-           ( String.sub s 0 pos,
-             String.sub s (pos + 1) (String.length s - (pos + 1)) ))
+        let pos = String.index s '=' in
+        ( String.sub s 0 pos,
+          String.sub s (pos + 1) (String.length s - (pos + 1)) ))
     |> List.map (fun (k, v) -> (k, String.sub v 1 (String.length v - 2)))
   in
   let key_id = List.assoc "keyId" fields in

@@ -11,17 +11,17 @@ let split_on_slash s =
 let of_string (src : string) : t =
   src |> split_on_slash
   |> List.map (function
-       | "*" -> S
-       | x when String.starts_with ~prefix:":" x -> (
-           match String.index_from_opt x 1 ':' with
-           | None -> P { pattern = x; suffix = "" }
-           | Some i ->
-               P
-                 {
-                   pattern = String.sub x 0 i;
-                   suffix = String.sub x i (String.length x - i);
-                 })
-       | x -> L x)
+    | "*" -> S
+    | x when String.starts_with ~prefix:":" x -> (
+        match String.index_from_opt x 1 ':' with
+        | None -> P { pattern = x; suffix = "" }
+        | Some i ->
+            P
+              {
+                pattern = String.sub x 0 i;
+                suffix = String.sub x i (String.length x - i);
+              })
+    | x -> L x)
 
 let perform ~(pat : t) (src : string) : (string * string) list option =
   let rec aux param = function

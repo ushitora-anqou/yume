@@ -151,7 +151,7 @@ KgbztieZwDBihVKbPtiaiGxeNXrxGWfL37BB0Jcy/RRYomLBjwTj2Ks=
       ((`Signature, "") :: (`Digest, "") :: headers |> List.sort compare)
       (new_headers |> List.sort compare)
     |> List.for_all (fun ((k, v), (k', v')) ->
-           k = k' && (k = `Signature || k = `Digest || v = v')));
+        k = k' && (k = `Signature || k = `Digest || v = v')));
   let {
     Signature.key_id = key_id';
     algorithm;
