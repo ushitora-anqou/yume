@@ -698,6 +698,73 @@ let test_cors_allow_all () =
         Eio.Switch.fail sw Common.Exit_normally)
   with Common.Exit_normally -> ()
 
+(* Preflight only allows headers from the configured allowlist. *)
+let test_cors_allow_headers () =
+  Eio_main.run @@ fun env ->
+  Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
+  let handler =
+    let open Yume.Server in
+    Cors.(
+      use
+        [
+          make "/*" ~methods:[ `GET; `POST ] ~origin:"https://example.com"
+            ~expose:[ `Etag ]
+            ~allow_headers:[ `Content_type; `Authorization ]
+            ();
+        ])
+      @@ Router.(use [ get "/" (fun _ _ -> respond_html "hello") ] default_handler)
+  in
+  let listen =
+    Eio.Net.getaddrinfo_stream ~service:"0" env#net "localhost" |> List.hd
+  in
+  try
+    Eio.Switch.run @@ fun sw ->
+    Yume.Server.start_server env ~sw ~listen handler (fun socket ->
+        let port =
+          match Eio.Net.listening_addr socket with
+          | `Tcp (_, port) -> port
+          | _ -> assert false
+        in
+        let base = Printf.sprintf "http://localhost:%d" port in
+        let preflight request_headers =
+          let resp =
+            Yume.Client.request ~meth:`OPTIONS ~headers:request_headers env
+              ~sw (base ^ "/")
+          in
+          assert (Yume.Client.Response.status resp = `No_content);
+          Yume.Client.Response.headers resp
+        in
+        (* allowed headers are echoed back *)
+        let hs =
+          preflight
+            [
+              ("access-control-request-method", "POST");
+              ("access-control-request-headers", "content-type, authorization");
+            ]
+        in
+        assert (
+          List.assoc `Access_control_allow_headers hs
+          = "content-type, authorization");
+        (* a header outside the allowlist is not granted *)
+        let hs =
+          preflight
+            [
+              ("access-control-request-method", "POST");
+              ("access-control-request-headers", "x-evil");
+            ]
+        in
+        assert (
+          List.assoc_opt `Access_control_allow_headers hs = None
+          || List.assoc `Access_control_allow_headers hs = "");
+        (* regular responses carry origin and expose headers *)
+        let resp = Yume.Client.get env ~sw (base ^ "/") in
+        let hs = Yume.Client.Response.headers resp in
+        assert (List.assoc `Access_control_allow_origin hs = "https://example.com");
+        assert (List.assoc `Access_control_expose_headers hs = "etag");
+
+        Eio.Switch.fail sw Common.Exit_normally)
+  with Common.Exit_normally -> ()
+
 let test_start_server_on () =
   Eio_main.run @@ fun env ->
   Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
@@ -737,6 +804,10 @@ let () =
           test_case "small image" `Quick (test_formdata_image test_image);
           test_case "large image" `Quick (test_formdata_image test_image_large);
         ] );
-      ("cors", [ test_case "allow all" `Quick test_cors_allow_all ]);
+      ( "cors",
+        [
+          test_case "allow all" `Quick test_cors_allow_all;
+          test_case "allow headers" `Quick test_cors_allow_headers;
+        ] );
       ("start_server_on", [ test_case "endpoint" `Quick test_start_server_on ]);
     ]

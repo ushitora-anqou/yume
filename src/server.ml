@@ -611,11 +611,13 @@ module Cors = struct
     methods : Method.t list;
     origin : string;
     expose : Header.name list;
+    allow_headers : Header.name list;
   }
 
-  let make target ?(origin = "*") ~methods ?(expose = []) () =
+  let make target ?(origin = "*") ~methods ?(expose = [])
+      ?(allow_headers = []) () =
     let target_pat = Path_pattern.of_string target in
-    { target; target_pat; methods; origin; expose }
+    { target; target_pat; methods; origin; expose; allow_headers }
 
   let use (src : t list) (inner_handler : handler) env (req : request) :
       response =
@@ -628,13 +630,25 @@ module Cors = struct
           (`Access_control_allow_origin, r.origin);
         ]
       in
+      (* Only echo the requested headers when they are all allowed;
+         without an allowlist this would grant arbitrary headers
+         (e.g. Cookie). *)
       let headers =
         match req with
-        | Request req ->
-            req.headers
-            |> List.assoc_opt `Access_control_request_headers
-            |> Option.fold ~none:headers ~some:(fun v ->
-                (`Access_control_allow_headers, v) :: headers)
+        | Request req -> (
+            match
+              req.headers |> List.assoc_opt `Access_control_request_headers
+            with
+            | None -> headers
+            | Some v ->
+                let requested =
+                  v |> String.split_on_char ','
+                  |> List.map (fun s ->
+                         Header.name_of_string (String.trim s))
+                in
+                if List.for_all (fun h -> List.mem h r.allow_headers) requested
+                then (`Access_control_allow_headers, v) :: headers
+                else headers)
       in
       respond ~status:`No_content ~headers ""
     in
@@ -666,6 +680,10 @@ module Cors = struct
         let resp = inner_handler env (Request req) in
         match (resp, path_match path) with
         | _, None -> resp
+        (* Note: plain `Response bare responses (which only originate
+           from the server's own error handling) pass through without
+           CORS headers; handler errors are converted to expert
+           responses by run_handler before reaching here. *)
         | BareResponse (`Expert (expert_resp, handler)), Some path_match ->
             BareResponse
               (`Expert
