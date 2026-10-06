@@ -432,8 +432,12 @@ let start_server env ~sw ?(max_body_size = default_max_body_size)
   let meth = Bare_server.Request.meth req in
   let headers = Bare_server.Request.headers req |> Headers.of_list in
   let path = Uri.path uri in
+  (* Flatten repeated query parameters into (name, value) pairs:
+     concatenating the values with "," would conflate ?a=1&a=2 with
+     ?a=1,2 and lose the individual values. *)
   let query =
-    Uri.query uri |> List.map (fun (k, xs) -> (k, xs |> String.concat ","))
+    Uri.query uri
+    |> List.concat_map (fun (k, xs) -> xs |> List.map (fun v -> (k, v)))
   in
   let lazy_parsed_body =
     lazy

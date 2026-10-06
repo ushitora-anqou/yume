@@ -180,6 +180,10 @@ let test_basics () =
           get "/cstruct" (fun _ _ ->
               respond_cstruct ~content_type:"application/octet-stream"
                 (Cstruct.of_string "hello cstruct"));
+          get "/qm" (fun _ req ->
+              respond_yojson
+                (`List
+                   (query_many "a" req |> List.map (fun s -> `String s))));
           get "/param/:id" (fun _ req ->
               let id = param_int ":id" req in
               let n = query_int "n" req in
@@ -272,6 +276,15 @@ let test_basics () =
         let hs = Yume.Client.Response.headers resp in
         assert (List.assoc `Content_type hs = "application/octet-stream");
         assert (List.assoc `Content_length hs = "13");
+
+        (* repeated query parameters keep their individual values *)
+        let resp =
+          Yume.Client.get env ~sw
+            (Printf.sprintf "http://localhost:%d/qm?a[]=1&a[]=2" listening_port)
+        in
+        assert (Yume.Client.Response.status resp = `OK);
+        let body = Yume.Client.Response.drain resp |> Yojson.Safe.from_string in
+        assert (body = `List [ `String "1"; `String "2" ]);
 
         let test_param url expected_status expected_body =
           let resp = Yume.Client.get env ~sw url in
