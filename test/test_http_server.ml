@@ -234,6 +234,83 @@ let test_basics () =
         Eio.Switch.fail sw Exit_normally)
   with Exit_normally -> ()
 
+let test_body_parsing () =
+  Eio_main.run @@ fun env ->
+  Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
+  let handler =
+    let open Yume.Server in
+    Router.(
+      use
+        [
+          post "/echo" (fun _ req -> query "msg" req |> respond);
+          post "/raw" (fun _ req -> body req |> respond);
+        ])
+      default_handler
+  in
+  let listen =
+    Eio.Net.getaddrinfo_stream ~service:"0" env#net "localhost" |> List.hd
+  in
+  try
+    Eio.Switch.run @@ fun sw ->
+    Yume.Server.start_server env ~sw ~listen ~max_body_size:64 handler
+      (fun socket ->
+        let listen_addr =
+          match Eio.Net.listening_addr socket with
+          | `Tcp (_, _) as addr -> addr
+          | _ -> assert false
+        in
+        (* Send [payload] over a raw socket and read the whole
+           response (the server closes the connection). *)
+        let raw payload =
+          let socket = Eio.Net.connect ~sw env#net listen_addr in
+          Eio.Buf_write.with_flow socket (fun oc ->
+              Eio.Buf_write.string oc payload);
+          let ic = Eio.Buf_read.of_flow socket ~max_size:65536 in
+          Eio.Buf_read.take_all ic
+        in
+
+        (* chunked request bodies must be parsed *)
+        let json = {|{"msg":"chunky"}|} in
+        let resp =
+          raw
+            (Printf.sprintf
+               "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Type: \
+                application/json\r\nTransfer-Encoding: chunked\r\nConnection: \
+                close\r\n\r\n%x\r\n%s\r\n0\r\n\r\n"
+               (String.length json) json)
+        in
+        assert (String.starts_with ~prefix:"HTTP/1.1 200" resp);
+        assert
+          (let sep = "\r\n\r\n" in
+           let rec find i =
+             if i + String.length sep > String.length resp then None
+             else if String.sub resp i (String.length sep) = sep then Some i
+             else find (i + 1)
+           in
+           match find 0 with
+           | Some i ->
+               String.sub resp (i + 4) (String.length resp - i - 4) = "chunky"
+           | None -> false);
+
+        (* non-strict Content-Length is rejected *)
+        let resp =
+          raw
+            "POST /raw HTTP/1.1\r\nHost: localhost\r\nContent-Length: \
+             0x10\r\nConnection: close\r\n\r\n0123456789abcdef"
+        in
+        assert (String.starts_with ~prefix:"HTTP/1.1 400" resp);
+
+        (* oversized Content-Length is rejected with 413 *)
+        let resp =
+          raw
+            "POST /raw HTTP/1.1\r\nHost: localhost\r\nContent-Length: \
+             65\r\nConnection: close\r\n\r\n01234567890123456789012345678901234567890123456789012345678901234"
+        in
+        assert (String.starts_with ~prefix:"HTTP/1.1 413" resp);
+
+        Eio.Switch.fail sw Exit_normally)
+  with Exit_normally -> ()
+
 let test_param_int () =
   Eio_main.run @@ fun env ->
   Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
@@ -435,6 +512,7 @@ let () =
   run "http server"
     [
       ("basics", [ test_case "case1" `Quick test_basics ]);
+      ("body", [ test_case "parsing" `Quick test_body_parsing ]);
       ("param", [ test_case "typed accessors" `Quick test_param_int ]);
       ( "formdata",
         [

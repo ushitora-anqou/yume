@@ -16,7 +16,9 @@ module Body = struct
     else
       Eio.Buf_read.(parse_exn take_all)
         body
-        ~max_size:(max_size + 1 (* take_all needs an extra byte *))
+        ~max_size:
+          (if max_size = max_int then max_size
+          else max_size + 1 (* take_all needs an extra byte *))
 end
 
 let respond ~(status : Status.t) ~(headers : Headers.t) ~(body : string) =

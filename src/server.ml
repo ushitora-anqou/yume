@@ -119,6 +119,11 @@ let param name = function Request { param; _ } -> List.assoc name param
 let param_opt name = function
   | Request { param; _ } -> List.assoc_opt name param
 
+let parse_strict_int_opt (s : string) : int option =
+  match parse_strict_int s with
+  | i -> Some i
+  | exception Failure _ -> None
+
 let strict_int_or_bad_request v =
   match parse_strict_int v with
   | i -> i
@@ -238,7 +243,7 @@ let load_formdata_from_stream out_stream =
   in
   save_part [] []
 
-let parse_body' content_length body headers =
+let parse_body' ~max_size body headers =
   let content_type = List.assoc_opt `Content_type headers in
   match
     content_type
@@ -259,26 +264,34 @@ let parse_body' content_length body headers =
 
         Eio.Switch.run @@ fun sw ->
         let _, out_stream =
-          Multipart_form_eio.stream ~bounds:max_int ~sw ~identify:Fun.id body
+          Multipart_form_eio.stream ~bounds:max_size ~sw ~identify:Fun.id body
             content_type
         in
         load_formdata_from_stream out_stream
       in
       (None, MultipartFormdata { loaded = load_body () })
   | Some "application/json" -> (
-      let raw_body = Bare_server.Body.to_string content_length body in
+      let raw_body = Bare_server.Body.to_string max_size body in
       ( Some raw_body,
         try JSON (Yojson.Safe.from_string raw_body) with _ -> Form [] ))
   | Some "application/x-www-form-urlencoded" | _ ->
-      let raw_body = Bare_server.Body.to_string content_length body in
+      let raw_body = Bare_server.Body.to_string max_size body in
       (Some raw_body, Form (Uri.query_of_encoded raw_body))
 
-let parse_body ~body ~headers =
-  match
-    Option.bind (List.assoc_opt `Content_length headers) int_of_string_opt
-  with
-  | None -> (Some "", Form [])
-  | Some content_length -> parse_body' content_length body headers
+(* Parse the request body, reading at most [max_body_size] bytes into
+   memory. The body is only read for methods that carry one
+   ([Http.Request.has_body]); in particular requests without a
+   Content-Length header (e.g. chunked) are read too. *)
+let parse_body ~max_body_size ~bare_req ~body ~headers =
+  match Http.Request.has_body bare_req with
+  | `No -> (Some "", Form [])
+  | `Yes | `Unknown -> (
+      match List.assoc_opt `Content_length headers with
+      | Some v -> (
+          match parse_strict_int_opt v with
+          | Some _ -> parse_body' ~max_size:max_body_size body headers
+          | None -> raise_error_response `Bad_request)
+      | None -> parse_body' ~max_size:max_body_size body headers)
 
 let default_handler : handler =
  fun _env -> function
@@ -287,6 +300,37 @@ let default_handler : handler =
         match req.meth with `GET -> `Not_found | _ -> `Method_not_allowed
       in
       respond ~status ""
+
+(* Run [handler], converting exceptions into error responses:
+   [ErrorResponse] carries its own status, and any other exception
+   becomes a 500. *)
+let run_handler (handler : handler) env (req : request) : response =
+  try handler env req with
+  | ErrorResponse { status; body } ->
+      Logs.debug (fun m ->
+          m "Error response raised: %s\n%s" (Status.to_string status)
+            (Printexc.get_backtrace ()));
+      respond ~status ~tags:[ "log" ] body
+  | e ->
+      Logs.err (fun m ->
+          m "Exception raised: %s\n%s" (Printexc.to_string e)
+            (Printexc.get_backtrace ()));
+      respond ~status:`Internal_server_error ""
+
+(* Validate the Content-Length header before invoking the handler: it
+   must be a strict decimal within [max_body_size]. Rejecting early
+   keeps oversized or malformed requests from ever being buffered. *)
+let check_request_body ~max_body_size (req : request) : unit =
+  match req with
+  | Request { headers; _ } -> (
+      match List.assoc_opt `Content_length headers with
+      | None -> ()
+      | Some v -> (
+          match parse_strict_int_opt v with
+          | Some cl when cl > max_body_size ->
+              raise_error_response `Request_entity_too_large
+          | Some _ -> ()
+          | None -> raise_error_response `Bad_request))
 
 type ws_conn = Bare_server.ws_conn
 
@@ -361,8 +405,11 @@ let respond_expert ~(bare_req : Bare_server.Request.t) ~(status : Status.t)
         (if Cstruct.length cs > 0 then Eio.Buf_write.schedule_cstruct oc cs);
         Eio.Buf_write.flush oc )
 
-let start_server env ~sw ?(listen = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080))
-    ?error_handler (handler : handler) k : unit =
+let default_max_body_size = 16 * 1024 * 1024 (* 16 MiB *)
+
+let start_server env ~sw ?(max_body_size = default_max_body_size)
+    ?(listen = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080)) ?error_handler
+    (handler : handler) k : unit =
   Ws_conn_man.start_global_runner env ~sw;
   Bare_server.start_server ~listen env ~sw k
   @@
@@ -381,7 +428,7 @@ let start_server env ~sw ?(listen = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080))
   in
   let lazy_parsed_body =
     lazy
-      (match parse_body ~body ~headers with
+      (match parse_body ~max_body_size ~bare_req:req ~body ~headers with
       | exception e ->
           Logs.debug (fun m -> m "parse_body failed: %s" (Printexc.to_string e));
           (None, None)
@@ -403,7 +450,13 @@ let start_server env ~sw ?(listen = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080))
   in
 
   (* Invoke the handler *)
-  let res = handler env req in
+  let res =
+    run_handler
+      (fun env req ->
+        check_request_body ~max_body_size req;
+        handler env req)
+      env req
+  in
 
   (* Respond (after call error_handler if necessary *)
   let rec aux first = function
@@ -438,11 +491,12 @@ let endpoint_of_socket (socket : _ Eio.Net.listening_socket_ty Eio.Resource.t) :
 
 (* Resolve [addr] and [port] into a listen address and start the
    server. *)
-let start_server_on env ~sw ?error_handler ~addr ~port handler k : unit =
+let start_server_on env ~sw ?max_body_size ?error_handler ~addr ~port handler
+    k : unit =
   let listen =
     Eio.Net.getaddrinfo_stream ~service:port env#net addr |> List.hd
   in
-  start_server env ~sw ?error_handler ~listen handler k
+  start_server env ~sw ?max_body_size ?error_handler ~listen handler k
 
 (* Middleware Router *)
 module Router = struct
@@ -486,19 +540,7 @@ module Router = struct
         in
         let truncate_body = req.meth = `HEAD in
         let req = Request { req with param } in
-        let resp =
-          try handler env req with
-          | ErrorResponse { status; body } ->
-              Logs.debug (fun m ->
-                  m "Error response raised: %s\n%s" (Status.to_string status)
-                    (Printexc.get_backtrace ()));
-              respond ~status ~tags:[ "log" ] body
-          | e ->
-              Logs.err (fun m ->
-                  m "Exception raised: %s\n%s" (Printexc.to_string e)
-                    (Printexc.get_backtrace ()));
-              respond ~status:`Internal_server_error ""
-        in
+        let resp = run_handler handler env req in
         let resp =
           match (truncate_body, resp) with
           | false, _ | _, BareResponse _ -> resp
