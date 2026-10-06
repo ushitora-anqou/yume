@@ -34,6 +34,13 @@
         devPackagesQuery = {
           ocaml-lsp-server = "*";
           utop = "*";
+          # test and doc dependencies of this project
+          # (resolveArgs.with-test/with-doc would also pull in test deps of
+          # every dependency, e.g. ocaml-lsp-server's pinned ocamlformat,
+          # which conflicts with recent dune versions)
+          alcotest = "*";
+          eio_main = "*";
+          odoc = "*";
           ocamlformat = let
             # read .ocamlformat
             # cf. https://nymphium.github.io/2023/05/06/purely-functioinal-ocaml-development.html
@@ -52,14 +59,13 @@
           devPackagesQuery
           // {
             ocaml-system = "*";
+            # opam-nix's ocaml overlay requires the ocaml-config package in
+            # the scope, but recent opam-repository removed the dependency of
+            # the ocaml virtual package on ocaml-config
+            ocaml-config = "*";
           };
         scope =
-          on.buildOpamProject' {
-            resolveArgs = {
-              with-test = true;
-              with-doc = true;
-            };
-          }
+          on.buildOpamProject' {}
           ./.
           query;
         overlay = final: prev:
