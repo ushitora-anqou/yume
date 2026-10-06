@@ -111,6 +111,9 @@ let test_basics () =
               respond_chunked ~content_type:"text/plain" (fun _ic oc ->
                   Chunked.write oc "hello, ";
                   Chunked.write oc "world"));
+          get "/cstruct" (fun _ _ ->
+              respond_cstruct ~content_type:"application/octet-stream"
+                (Cstruct.of_string "hello cstruct"));
           get "/param/:id" (fun _ req ->
               let id = param_int ":id" req in
               let n = query_int "n" req in
@@ -172,6 +175,17 @@ let test_basics () =
         assert (body = "hello, world");
         let hs = Yume.Client.Response.headers resp in
         assert (List.assoc `Content_type hs = "text/plain");
+
+        let resp =
+          Yume.Client.get env ~sw
+            (Printf.sprintf "http://localhost:%d/cstruct" listening_port)
+        in
+        assert (Yume.Client.Response.status resp = `OK);
+        let body = Yume.Client.Response.drain resp in
+        assert (body = "hello cstruct");
+        let hs = Yume.Client.Response.headers resp in
+        assert (List.assoc `Content_type hs = "application/octet-stream");
+        assert (List.assoc `Content_length hs = "13");
 
         let test_param url expected_status expected_body =
           let resp = Yume.Client.get env ~sw url in

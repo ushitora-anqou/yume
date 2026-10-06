@@ -41,19 +41,10 @@ let () =
                 ~headers:
                   [ (`Content_length, string_of_int (String.length large)) ]
                 large);
-          (* expert handler + schedule_cstruct: bypasses the cohttp
-             body pipeline (no per-byte user-space copies) *)
+          (* zero-copy path via Server.respond_cstruct: bypasses the
+             cohttp body pipeline (no per-byte user-space copies) *)
           get "/large-expert" (fun _ _ ->
-              let headers =
-                [ (`Content_length, string_of_int (Cstruct.length large_cs)) ]
-                |> Yume.Headers.to_list |> Http.Header.of_list
-              in
-              let resp : Cohttp.Response.t = Http.Response.make ~headers () in
-              let handler _ic oc =
-                Eio.Buf_write.schedule_cstruct oc large_cs;
-                Eio.Buf_write.flush oc
-              in
-              BareResponse (`Expert (resp, handler)));
+              respond_cstruct ~content_type:"application/octet-stream" large_cs);
         ])
       default_handler
   in

@@ -72,7 +72,7 @@ contributes (same 32MiB body, `-t4 -c8`, single runs after warmup):
 | server | body path | throughput |
 |---|---|---|
 | yume `respond` | cohttp `flow_to_writer`: Buf_read copy + `take` string + `Buf_write.string` (3 user-space copies/byte) | 1.36 GB/s |
-| yume `/large-expert` (Expert handler + `Buf_write.schedule_cstruct`) | zero user-space copies, single writev | **5.81 GB/s** |
+| yume `/large-expert` (`Server.respond_cstruct`, i.e. `Buf_write.schedule_cstruct`) | zero user-space copies, single writev | **6.02 GB/s** |
 | raw eio server (`bench/raw_server.ml`, no cohttp at all) | same as above | 6.37 GB/s |
 | nginx, 1 worker (sendfile) | kernel zero-copy | 11.81 GB/s |
 | nginx, 2 workers (sendfile) | kernel zero-copy | ~11.6–11.9 GB/s |
@@ -83,11 +83,9 @@ Findings:
    bottleneck is cohttp's body pipeline (`Utils.flow_to_writer`
    routes the body through an `Eio.Buf_read` buffer and re-creates
    strings before writing them into the `Buf_write`), not eio and not
-   OCaml. Serving large bodies through an Expert handler with
-   `Eio.Buf_write.schedule_cstruct` (a Cstruct built once, then
-   enqueued without copying) reaches 5.81 GB/s — 91% of the raw-eio
-   ceiling. A convenience API around this pattern (e.g.
-   `respond_cstruct`) would make the fast path ergonomic.
+   OCaml. Serving large bodies through `Server.respond_cstruct`
+   (a Cstruct built once, then enqueued without copying) reaches
+   ~6 GB/s — ~94% of the raw-eio ceiling.
 2. **The remaining ~2x vs nginx is structural.** nginx's sendfile
    moves data page-cache-to-socket inside the kernel; an application
    server holding the body in OCaml strings must cross the kernel

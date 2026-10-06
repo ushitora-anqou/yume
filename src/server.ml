@@ -73,6 +73,25 @@ let respond_chunked ?(headers = []) ?(keep_alive_timeout = 5) ~content_type
   in
   BareResponse (`Expert (Http.Response.make ~headers (), handler))
 
+(* Respond with a fixed-length body held in a [Cstruct.t]. The body is
+   enqueued with [Eio.Buf_write.schedule_cstruct], i.e. without any
+   user-space copy, which makes this by far the fastest way to serve
+   large bodies: reuse the same Cstruct across requests (e.g. a
+   pre-encoded asset) and each request costs a single writev. *)
+let respond_cstruct ?(headers = []) ~content_type (body : Cstruct.t) :
+    response =
+  let headers =
+    (`Content_length, string_of_int (Cstruct.length body))
+    :: (`Content_type, content_type)
+    :: headers
+  in
+  let headers = headers |> Headers.to_list |> Http.Header.of_list in
+  let handler _ic oc =
+    Eio.Buf_write.schedule_cstruct oc body;
+    Eio.Buf_write.flush oc
+  in
+  BareResponse (`Expert (Http.Response.make ~headers (), handler))
+
 let body = function
   | Request { body; _ } -> (
       match Lazy.force body with
