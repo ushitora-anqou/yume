@@ -765,6 +765,56 @@ let test_cors_allow_headers () =
         Eio.Switch.fail sw Common.Exit_normally)
   with Common.Exit_normally -> ()
 
+(* Handler errors (500 from run_handler) must still receive CORS
+   headers, and the Logger middleware must not alter responses. *)
+let test_cors_error_and_logger () =
+  Eio_main.run @@ fun env ->
+  Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
+  let handler =
+    let open Yume.Server in
+    Logger.use
+    @@ Cors.(
+         use
+           [
+             make "/*" ~methods:[ `GET; `POST ]
+               ~origin:"https://example.com" ();
+           ])
+    @@ Router.(
+         use
+           [
+             get "/" (fun _ _ -> respond_html "hello");
+             get "/error" (fun _ _ -> failwith "boom");
+           ])
+         default_handler
+  in
+  let listen =
+    Eio.Net.getaddrinfo_stream ~service:"0" env#net "localhost" |> List.hd
+  in
+  try
+    Eio.Switch.run @@ fun sw ->
+    Yume.Server.start_server env ~sw ~listen handler (fun socket ->
+        let port =
+          match Eio.Net.listening_addr socket with
+          | `Tcp (_, port) -> port
+          | _ -> assert false
+        in
+        let base = Printf.sprintf "http://localhost:%d" port in
+        (* Logger middleware is transparent for successful responses *)
+        let resp = Yume.Client.get env ~sw (base ^ "/") in
+        assert (Yume.Client.Response.status resp = `OK);
+        assert (Yume.Client.Response.drain resp = "hello");
+        (* a failing handler yields a 500 that still carries CORS
+           headers *)
+        let resp = Yume.Client.get env ~sw (base ^ "/error") in
+        assert (
+          Yume.Client.Response.status resp = `Internal_server_error);
+        let hs = Yume.Client.Response.headers resp in
+        assert (
+          List.assoc `Access_control_allow_origin hs = "https://example.com");
+
+        Eio.Switch.fail sw Common.Exit_normally)
+  with Common.Exit_normally -> ()
+
 let test_start_server_on () =
   Eio_main.run @@ fun env ->
   Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
@@ -808,6 +858,7 @@ let () =
         [
           test_case "allow all" `Quick test_cors_allow_all;
           test_case "allow headers" `Quick test_cors_allow_headers;
+          test_case "error response" `Quick test_cors_error_and_logger;
         ] );
       ("start_server_on", [ test_case "endpoint" `Quick test_start_server_on ]);
     ]
