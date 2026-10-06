@@ -93,6 +93,41 @@ let error_handler ~req:_ ~status:_ ~headers:_ ~body:_ = assert false
 
 exception Exit_normally
 
+(* Send [payload] over a raw socket and read the whole response (the
+   server must close the connection, e.g. via "Connection: close"). *)
+let raw_request ~sw env listen_addr payload =
+  let socket = Eio.Net.connect ~sw env#net listen_addr in
+  Eio.Buf_write.with_flow socket (fun oc ->
+      Eio.Buf_write.string oc payload);
+  let ic = Eio.Buf_read.of_flow socket ~max_size:65536 in
+  Eio.Buf_read.take_all ic
+
+let split_headers_body (resp : string) : string * string =
+  let sep = "\r\n\r\n" in
+  let rec find i =
+    if i + String.length sep > String.length resp then None
+    else if String.sub resp i (String.length sep) = sep then Some i
+    else find (i + 1)
+  in
+  match find 0 with
+  | Some i ->
+      ( String.sub resp 0 i,
+        String.sub resp (i + 4) (String.length resp - i - 4) )
+  | None -> (resp, "")
+
+let header_value (headers : string) (name : string) : string option =
+  headers |> String.split_on_char '\n'
+  |> List.map String.trim
+  |> List.find_map (fun line ->
+         match String.index_opt line ':' with
+         | Some i
+           when String.equal
+                  (String.lowercase_ascii (String.sub line 0 i))
+                  name ->
+             Some
+               (String.trim (String.sub line (i + 1) (String.length line - i - 1)))
+         | _ -> None)
+
 let test_basics () =
   let expected_get_response = "response test text" in
   let expected_get_json_response = `Assoc [ ("hello", `String "world") ] in
@@ -259,15 +294,7 @@ let test_body_parsing () =
           | `Tcp (_, _) as addr -> addr
           | _ -> assert false
         in
-        (* Send [payload] over a raw socket and read the whole
-           response (the server closes the connection). *)
-        let raw payload =
-          let socket = Eio.Net.connect ~sw env#net listen_addr in
-          Eio.Buf_write.with_flow socket (fun oc ->
-              Eio.Buf_write.string oc payload);
-          let ic = Eio.Buf_read.of_flow socket ~max_size:65536 in
-          Eio.Buf_read.take_all ic
-        in
+        let raw payload = raw_request ~sw env listen_addr payload in
 
         (* chunked request bodies must be parsed *)
         let json = {|{"msg":"chunky"}|} in
@@ -280,17 +307,7 @@ let test_body_parsing () =
                (String.length json) json)
         in
         assert (String.starts_with ~prefix:"HTTP/1.1 200" resp);
-        assert
-          (let sep = "\r\n\r\n" in
-           let rec find i =
-             if i + String.length sep > String.length resp then None
-             else if String.sub resp i (String.length sep) = sep then Some i
-             else find (i + 1)
-           in
-           match find 0 with
-           | Some i ->
-               String.sub resp (i + 4) (String.length resp - i - 4) = "chunky"
-           | None -> false);
+        assert (snd (split_headers_body resp) = "chunky");
 
         (* non-strict Content-Length is rejected *)
         let resp =
@@ -307,6 +324,57 @@ let test_body_parsing () =
              65\r\nConnection: close\r\n\r\n01234567890123456789012345678901234567890123456789012345678901234"
         in
         assert (String.starts_with ~prefix:"HTTP/1.1 413" resp);
+
+        Eio.Switch.fail sw Exit_normally)
+  with Exit_normally -> ()
+
+(* RFC 9110 9.3.2: HEAD responses must carry the Content-Length of the
+   corresponding GET but no body, whatever response constructor the
+   handler used. *)
+let test_head () =
+  Eio_main.run @@ fun env ->
+  Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
+  let expected_body = "hello cstruct" in
+  let handler =
+    let open Yume.Server in
+    Router.(
+      use
+        [
+          get "/" (fun _ _ -> respond_html "hello, head");
+          get "/cstruct" (fun _ _ ->
+              respond_cstruct ~content_type:"application/octet-stream"
+                (Cstruct.of_string expected_body));
+        ])
+      default_handler
+  in
+  let listen =
+    Eio.Net.getaddrinfo_stream ~service:"0" env#net "localhost" |> List.hd
+  in
+  try
+    Eio.Switch.run @@ fun sw ->
+    Yume.Server.start_server env ~sw ~listen handler (fun socket ->
+        let listen_addr =
+          match Eio.Net.listening_addr socket with
+          | `Tcp (_, _) as addr -> addr
+          | _ -> assert false
+        in
+        let check path expected_content_length =
+          let resp =
+            raw_request ~sw env listen_addr
+              (Printf.sprintf
+                 "HEAD %s HTTP/1.1\r\nHost: localhost\r\nConnection: \
+                  close\r\n\r\n"
+                 path)
+          in
+          let headers, body = split_headers_body resp in
+          assert (String.starts_with ~prefix:"HTTP/1.1 200" headers);
+          assert (body = "");
+          assert (
+            header_value headers "content-length"
+            = Some expected_content_length)
+        in
+        check "/" (string_of_int (String.length "hello, head"));
+        check "/cstruct" (string_of_int (String.length expected_body));
 
         Eio.Switch.fail sw Exit_normally)
   with Exit_normally -> ()
@@ -513,6 +581,7 @@ let () =
     [
       ("basics", [ test_case "case1" `Quick test_basics ]);
       ("body", [ test_case "parsing" `Quick test_body_parsing ]);
+      ("head", [ test_case "no body" `Quick test_head ]);
       ("param", [ test_case "typed accessors" `Quick test_param_int ]);
       ( "formdata",
         [

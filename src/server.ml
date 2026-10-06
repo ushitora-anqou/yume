@@ -386,6 +386,9 @@ let ws_recv = Bare_server.ws_recv
 let respond_expert ~(bare_req : Bare_server.Request.t) ~(status : Status.t)
     ~(headers : Headers.t) ~(body : string) : Bare_server.Response.t =
   let keep_alive = Http.Request.is_keep_alive bare_req in
+  (* RFC 9110 9.3.2: a HEAD response carries the same Content-Length
+     as the corresponding GET, but no body. *)
+  let is_head = Http.Request.meth bare_req = `HEAD in
   let headers = headers |> Headers.to_list |> Http.Header.of_list in
   let headers =
     match Http.Header.connection headers with
@@ -398,11 +401,12 @@ let respond_expert ~(bare_req : Bare_server.Request.t) ~(status : Status.t)
     Http.Header.replace headers "content-length"
       (string_of_int (String.length body))
   in
-  let cs = Cstruct.of_string body in
   `Expert
     ( Http.Response.make ~status ~headers (),
       fun _ic oc ->
-        (if Cstruct.length cs > 0 then Eio.Buf_write.schedule_cstruct oc cs);
+        (if not is_head then
+           let cs = Cstruct.of_string body in
+           if Cstruct.length cs > 0 then Eio.Buf_write.schedule_cstruct oc cs);
         Eio.Buf_write.flush oc )
 
 let default_max_body_size = 16 * 1024 * 1024 (* 16 MiB *)
@@ -459,7 +463,14 @@ let start_server env ~sw ?(max_body_size = default_max_body_size)
   in
 
   (* Respond (after call error_handler if necessary *)
+  let is_head = match meth with `HEAD -> true | _ -> false in
   let rec aux first = function
+    | BareResponse (`Expert (resp, _handler)) when is_head ->
+        (* RFC 9110 9.3.2: HEAD responses must not carry a body.
+           respond_expert suppresses its own body; this also covers
+           respond_cstruct, respond_chunked and user-provided
+           experts. *)
+        `Expert (resp, fun _ic _oc -> ())
     | BareResponse resp -> resp
     | Response { status; headers; body; _ }
       when (not first)
@@ -538,14 +549,8 @@ module Router = struct
                 |> Option.map (fun param -> (param, handler)))
           |> Option.value ~default:([], inner_handler)
         in
-        let truncate_body = req.meth = `HEAD in
         let req = Request { req with param } in
         let resp = run_handler handler env req in
-        let resp =
-          match (truncate_body, resp) with
-          | false, _ | _, BareResponse _ -> resp
-          | true, Response r -> Response { r with body = "" }
-        in
         match resp with
         | Response ({ status; tags; _ } as r) when Status.is_error status ->
             Response { r with tags = "log" :: tags }
