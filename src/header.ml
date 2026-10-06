@@ -49,6 +49,7 @@ type name =
   | `If_range
   | `If_unmodified_since
   | `IM
+  | `Keep_alive
   | `Last_modified
   | `Link
   | `Location
@@ -137,6 +138,7 @@ let lower_string_of_name : name -> string = function
   | `If_range -> "if-range"
   | `If_unmodified_since -> "if-unmodified-since"
   | `IM -> "im"
+  | `Keep_alive -> "keep-alive"
   | `Last_modified -> "last-modified"
   | `Link -> "link"
   | `Location -> "location"
@@ -228,6 +230,7 @@ let name_of_string (k : string) : name =
   | "if-range" -> `If_range
   | "if-unmodified-since" -> `If_unmodified_since
   | "im" -> `IM
+  | "keep-alive" -> `Keep_alive
   | "last-modified" -> `Last_modified
   | "link" -> `Link
   | "location" -> `Location

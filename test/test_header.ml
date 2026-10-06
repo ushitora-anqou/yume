@@ -52,6 +52,7 @@ let all_names : Header.name list =
     `If_range;
     `If_unmodified_since;
     `IM;
+    `Keep_alive;
     `Last_modified;
     `Link;
     `Location;
