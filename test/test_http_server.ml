@@ -107,11 +107,16 @@ let test_basics () =
           get "/" (fun _ _ -> respond_html expected_get_response);
           get "/json" (fun _ _ -> respond_yojson expected_get_json_response);
           post "/" (fun _ req -> (* echo *) query "msg" req |> respond);
+          get "/chunked" (fun _ _ ->
+              respond_chunked ~content_type:"text/plain" (fun _ic oc ->
+                  Chunked.write oc "hello, ";
+                  Chunked.write oc "world"));
           get "/param/:id" (fun _ req ->
               let id = param_int ":id" req in
               let n = query_int "n" req in
               let m = Option.value (query_int_opt "m" req) ~default:0 in
-              respond_yojson (`Assoc [ ("id", `Int id); ("n", `Int n); ("m", `Int m) ]));
+              respond_yojson
+                (`Assoc [ ("id", `Int id); ("n", `Int n); ("m", `Int m) ]));
         ])
       default_handler
   in
@@ -158,6 +163,16 @@ let test_basics () =
         let body = Yume.Client.Response.drain resp in
         assert (body = "hello");
 
+        let resp =
+          Yume.Client.get env ~sw
+            (Printf.sprintf "http://localhost:%d/chunked" listening_port)
+        in
+        assert (Yume.Client.Response.status resp = `OK);
+        let body = Yume.Client.Response.drain resp in
+        assert (body = "hello, world");
+        let hs = Yume.Client.Response.headers resp in
+        assert (List.assoc `Content_type hs = "text/plain");
+
         let test_param url expected_status expected_body =
           let resp = Yume.Client.get env ~sw url in
           assert (Yume.Client.Response.status resp = expected_status);
@@ -168,8 +183,7 @@ let test_basics () =
               assert (body = expected)
         in
         let url = Printf.sprintf "http://localhost:%d/param" listening_port in
-        test_param (url ^ "/12?n=34") `OK
-          (Some {|{"id":12,"n":34,"m":0}|});
+        test_param (url ^ "/12?n=34") `OK (Some {|{"id":12,"n":34,"m":0}|});
         (* optional query *)
         test_param (url ^ "/12?n=34&m=56") `OK
           (Some {|{"id":12,"n":34,"m":56}|});
@@ -189,7 +203,8 @@ let test_param_int () =
               let id = param_int ":id" req in
               let n = query_int "n" req in
               let m = Option.value (query_int_opt "m" req) ~default:0 in
-              respond_yojson (`Assoc [ ("id", `Int id); ("n", `Int n); ("m", `Int m) ]));
+              respond_yojson
+                (`Assoc [ ("id", `Int id); ("n", `Int n); ("m", `Int m) ]));
         ])
       default_handler
   in
@@ -198,8 +213,7 @@ let test_param_int () =
   in
   try
     Eio.Switch.run @@ fun sw ->
-    Yume.Server.start_server env ~sw ~listen handler
-      (fun socket ->
+    Yume.Server.start_server env ~sw ~listen handler (fun socket ->
         let listening_port =
           match Eio.Net.listening_addr socket with
           | `Tcp (_, port) -> port

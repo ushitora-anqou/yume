@@ -53,6 +53,26 @@ let respond_yojson ?status ?(headers = []) ?tags y =
   |> respond ?status ?tags
        ~headers:((`Content_type, "application/json; charset=utf-8") :: headers)
 
+(* Respond with a chunked transfer-encoding stream. The handler writes
+   chunks via [Chunked.write]; when it returns normally, the final
+   zero-length chunk is sent automatically. Handlers that stream
+   indefinitely never return and are cancelled on connection reset. *)
+let respond_chunked ?(headers = []) ?(keep_alive_timeout = 5) ~content_type
+    (handler : Eio.Buf_read.t -> Eio.Buf_write.t -> unit) : response =
+  let headers =
+    (`Connection, "keep-alive")
+    :: (`Keep_alive, Printf.sprintf "timeout=%d" keep_alive_timeout)
+    :: (`Transfer_encoding, "chunked")
+    :: (`Content_type, content_type)
+    :: headers
+  in
+  let headers = headers |> Headers.to_list |> Http.Header.of_list in
+  let handler ic oc =
+    handler ic oc;
+    Chunked.write_finish oc
+  in
+  BareResponse (`Expert (Http.Response.make ~headers (), handler))
+
 let body = function
   | Request { body; _ } -> (
       match Lazy.force body with
@@ -68,8 +88,10 @@ let parse_strict_int (s : string) : int =
     String.fold_left
       (fun acc ch ->
         let i = Char.code ch - Char.code '0' in
-        if not (0 <= i && i <= 9) then failwith "parse_strict_int: invalid digit"
-        else if acc > (max_int - i) / 10 then failwith "parse_strict_int: overflow"
+        if not (0 <= i && i <= 9) then
+          failwith "parse_strict_int: invalid digit"
+        else if acc > (max_int - i) / 10 then
+          failwith "parse_strict_int: overflow"
         else (acc * 10) + i)
       0 s
 
@@ -248,6 +270,10 @@ let default_handler : handler =
       respond ~status ""
 
 type ws_conn = Bare_server.ws_conn
+
+(* Expose [Chunked] as [Server.Chunked] for use alongside
+   [respond_chunked]. *)
+module Chunked = Chunked
 
 module Ws_conn_man = struct
   type t = {

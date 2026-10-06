@@ -3,6 +3,7 @@ module Status = Status
 module Header = Header
 module Headers = Headers
 module Range = Range
+module Chunked = Chunked
 module Method = Method
 module Ws = Ws
 module Bare_server = Bare_server
