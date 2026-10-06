@@ -128,6 +128,28 @@ let header_value (headers : string) (name : string) : string option =
                (String.trim (String.sub line (i + 1) (String.length line - i - 1)))
          | _ -> None)
 
+let header_values (headers : string) (name : string) : string list =
+  headers |> String.split_on_char '\n'
+  |> List.filter_map (fun line ->
+         match String.index_opt line ':' with
+         | Some i
+           when String.equal
+                  (String.lowercase_ascii (String.sub line 0 i))
+                  name ->
+             Some
+               (String.trim (String.sub line (i + 1) (String.length line - i - 1)))
+         | _ -> None)
+
+(* Read the status line and headers of a raw response (up to the
+   empty line), without waiting for the body. *)
+let read_response_head (ic : Eio.Buf_read.t) : string =
+  let rec loop acc =
+    let line = Eio.Buf_read.line ic in
+    if line = "" || line = "\r" then String.concat "\n" (List.rev acc)
+    else loop (line :: acc)
+  in
+  loop []
+
 let test_basics () =
   let expected_get_response = "response test text" in
   let expected_get_json_response = `Assoc [ ("hello", `String "world") ] in
@@ -379,6 +401,70 @@ let test_head () =
         Eio.Switch.fail sw Exit_normally)
   with Exit_normally -> ()
 
+(* User-supplied framing headers must be replaced, not duplicated. *)
+let test_framing_headers () =
+  Eio_main.run @@ fun env ->
+  Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
+  let handler =
+    let open Yume.Server in
+    Router.(
+      use
+        [
+          get "/cstruct" (fun _ _ ->
+              respond_cstruct
+                ~headers:
+                  [ (`Content_length, "999"); (`Content_type, "text/plain") ]
+                ~content_type:"application/octet-stream"
+                (Cstruct.of_string "hello cstruct"));
+          get "/chunked" (fun _ _ ->
+              respond_chunked
+                ~headers:
+                  [ (`Content_length, "999"); (`Content_type, "text/plain") ]
+                ~content_type:"application/octet-stream"
+                (fun _ic oc -> Chunked.write oc "data"));
+        ])
+      default_handler
+  in
+  let listen =
+    Eio.Net.getaddrinfo_stream ~service:"0" env#net "localhost" |> List.hd
+  in
+  try
+    Eio.Switch.run @@ fun sw ->
+    Yume.Server.start_server env ~sw ~listen handler (fun socket ->
+        let listen_addr =
+          match Eio.Net.listening_addr socket with
+          | `Tcp (_, _) as addr -> addr
+          | _ -> assert false
+        in
+        (* fixed-length framing: exactly one Content-Length, the right
+           one *)
+        let resp =
+          raw_request ~sw env listen_addr
+            "GET /cstruct HTTP/1.1\r\nHost: localhost\r\nConnection: \
+             close\r\n\r\n"
+        in
+        let headers, body = split_headers_body resp in
+        assert (String.starts_with ~prefix:"HTTP/1.1 200" headers);
+        assert (body = "hello cstruct");
+        assert (header_values headers "content-length" = [ "13" ]);
+        assert (header_values headers "content-type" = [ "application/octet-stream" ]);
+
+        (* chunked framing: no Content-Length at all *)
+        let socket = Eio.Net.connect ~sw env#net listen_addr in
+        Eio.Buf_write.with_flow socket (fun oc ->
+            Eio.Buf_write.string oc
+              "GET /chunked HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        let ic = Eio.Buf_read.of_flow socket ~max_size:65536 in
+        let headers = read_response_head ic in
+        assert (String.starts_with ~prefix:"HTTP/1.1 200" headers);
+        assert (header_values headers "content-length" = []);
+        assert (header_values headers "transfer-encoding" = [ "chunked" ]);
+        assert (
+          header_values headers "content-type" = [ "application/octet-stream" ]);
+
+        Eio.Switch.fail sw Exit_normally)
+  with Exit_normally -> ()
+
 let test_param_int () =
   Eio_main.run @@ fun env ->
   Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
@@ -582,6 +668,8 @@ let () =
       ("basics", [ test_case "case1" `Quick test_basics ]);
       ("body", [ test_case "parsing" `Quick test_body_parsing ]);
       ("head", [ test_case "no body" `Quick test_head ]);
+      ( "framing",
+        [ test_case "header replacement" `Quick test_framing_headers ]);
       ("param", [ test_case "typed accessors" `Quick test_param_int ]);
       ( "formdata",
         [

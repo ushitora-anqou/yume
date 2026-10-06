@@ -59,14 +59,19 @@ let respond_yojson ?status ?(headers = []) ?tags y =
    indefinitely never return and are cancelled on connection reset. *)
 let respond_chunked ?(headers = []) ?(keep_alive_timeout = 5) ~content_type
     (handler : Eio.Buf_read.t -> Eio.Buf_write.t -> unit) : response =
-  let headers =
-    (`Connection, "keep-alive")
-    :: (`Keep_alive, Printf.sprintf "timeout=%d" keep_alive_timeout)
-    :: (`Transfer_encoding, "chunked")
-    :: (`Content_type, content_type)
-    :: headers
-  in
   let headers = headers |> Headers.to_list |> Http.Header.of_list in
+  (* Chunked framing replaces any length framing: a Content-Length
+     header must not coexist with Transfer-Encoding (RFC 9112 6.1). *)
+  let headers = Http.Header.remove headers "content-length" in
+  let headers =
+    Http.Header.replace headers "transfer-encoding" "chunked"
+  in
+  let headers =
+    Http.Header.replace headers "keep-alive"
+      (Printf.sprintf "timeout=%d" keep_alive_timeout)
+  in
+  let headers = Http.Header.replace headers "connection" "keep-alive" in
+  let headers = Http.Header.replace headers "content-type" content_type in
   let handler ic oc =
     handler ic oc;
     Chunked.write_finish oc
@@ -80,12 +85,12 @@ let respond_chunked ?(headers = []) ?(keep_alive_timeout = 5) ~content_type
    pre-encoded asset) and each request costs a single writev. *)
 let respond_cstruct ?(headers = []) ~content_type (body : Cstruct.t) :
     response =
-  let headers =
-    (`Content_length, string_of_int (Cstruct.length body))
-    :: (`Content_type, content_type)
-    :: headers
-  in
   let headers = headers |> Headers.to_list |> Http.Header.of_list in
+  let headers =
+    Http.Header.replace headers "content-length"
+      (string_of_int (Cstruct.length body))
+  in
+  let headers = Http.Header.replace headers "content-type" content_type in
   let handler _ic oc =
     Eio.Buf_write.schedule_cstruct oc body;
     Eio.Buf_write.flush oc
