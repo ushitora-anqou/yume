@@ -1,0 +1,3 @@
+(executable
+ (name yume_server)
+ (libraries eio eio.core eio_main yume))
