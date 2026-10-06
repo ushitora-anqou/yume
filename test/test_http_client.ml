@@ -52,6 +52,14 @@ let test_get_with_custom_cert () =
   Yume.Client.fetch ~authenticator env "https://expired-rsa-dv.ssl.com/"
   |> Result.get_ok |> ignore
 
+(* GET/DELETE must not carry a body: fetch used to advertise the body
+   length in Content-Length while never sending it. *)
+let test_fetch_get_body_rejected () =
+  Eio_main.run @@ fun env ->
+  (match Yume.Client.fetch env ~meth:`GET ~body:"x" "http://localhost/" with
+   | exception Invalid_argument _ -> ()
+   | _ -> assert false)
+
 let () =
   let open Alcotest in
   Common.setup_logs ();
@@ -60,4 +68,7 @@ let () =
       ("get", [ test_case "case1" `Quick test_get ]);
       ( "get with custom cert",
         [ test_case "case1" `Quick test_get_with_custom_cert ] );
+      ( "fetch body",
+        [ test_case "GET with body rejected" `Quick
+            test_fetch_get_body_rejected ] );
     ]

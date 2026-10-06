@@ -76,16 +76,20 @@ let put = request ~meth:`PUT
 let delete = request ~meth:`DELETE
 
 let fetch env ?(headers = []) ?(meth = `GET) ?(body = "") ?(sign = None)
-    ?authenticator url =
-  let path_query_fragment (u : Uri.t) =
+    ?(rewrite_localhost_tls = false) ?authenticator url =
+  (* GET and DELETE never carry a body: sending a Content-Length
+     without the declared bytes would hang the server. *)
+  (match (meth, body) with
+  | (`GET | `DELETE), "" -> ()
+  | (`GET | `DELETE), _ ->
+      invalid_arg "Yume.Client.fetch: GET/DELETE must not carry a body"
+  | _ -> ());
+  (* The request target of an HTTP/1.1 request never includes the
+     fragment (RFC 9110 7.1); including it would corrupt the signed
+     (request-target) pseudo-header. *)
+  let path_query (u : Uri.t) =
     let res = Uri.path u in
-    let res =
-      match Uri.verbatim_query u with None -> res | Some q -> res ^ "?" ^ q
-    in
-    let res =
-      match Uri.fragment u with None -> res | Some f -> res ^ "#" ^ f
-    in
-    res
+    match Uri.verbatim_query u with None -> res | Some q -> res ^ "?" ^ q
   in
   let http_host (u : Uri.t) =
     let host = Uri.host u |> Option.get in
@@ -130,11 +134,12 @@ let fetch env ?(headers = []) ?(meth = `GET) ?(body = "") ?(sign = None)
 
   let uri = Uri.of_string url in
 
-  (* NOTE: Ad-hoc scheme rewriting (https -> http) for localhost
-     for better dev experience *)
+  (* Optional scheme rewriting (https -> http) for localhost, for
+     local development against a plain-text server. Disabled by
+     default: silently downgrading TLS must be an explicit choice. *)
   let uri =
-    match Uri.scheme uri with
-    | Some "https"
+    match (rewrite_localhost_tls, Uri.scheme uri) with
+    | true, Some "https"
       when [ Some "localhost"; Some "127.0.0.1" ] |> List.mem (Uri.host uri) ->
         Uri.with_scheme uri (Some "http")
     | _ -> uri
@@ -146,8 +151,10 @@ let fetch env ?(headers = []) ?(meth = `GET) ?(body = "") ?(sign = None)
       let add (k, v) headers =
         if List.mem_assoc k headers then headers else (k, v) :: headers
       in
+      (* Content-Length is derived from the body by the underlying
+         client; setting it by hand would desynchronize when the body
+         is not actually sent. *)
       headers
-      |> add (`Content_length, body |> String.length |> string_of_int)
       |> add (`Connection, "close")
       |> add (`Host, http_host uri)
       |> add (`Date, to_http_date (now ()))
@@ -157,7 +164,7 @@ let fetch env ?(headers = []) ?(meth = `GET) ?(body = "") ?(sign = None)
       | None -> headers
       | Some (priv_key, key_id, signed_headers) ->
           Signature.sign ~priv_key ~key_id ~signed_headers ~headers ~meth
-            ~path:(path_query_fragment uri) ~body:(Some body)
+            ~path:(path_query uri) ~body:(Some body)
     in
     Headers.to_list headers
   in
@@ -187,9 +194,13 @@ let fetch env ?(headers = []) ?(meth = `GET) ?(body = "") ?(sign = None)
 
 exception FetchFailure of (Status.t * Headers.t * string) option
 
-let fetch_exn ?(headers = []) ?(meth = `GET) ?(body = "") ?(sign = None) env
-    (url : string) : string =
-  match fetch env ~headers ~meth ~body ~sign url with
+let fetch_exn ?(headers = []) ?(meth = `GET) ?(body = "") ?(sign = None)
+    ?(rewrite_localhost_tls = false) ?authenticator env (url : string) :
+    string =
+  match
+    fetch env ~headers ~meth ~body ~sign ~rewrite_localhost_tls ?authenticator
+      url
+  with
   | Ok (`OK, _, body) -> body
   | Ok r -> raise (FetchFailure (Some r))
   | _ -> raise (FetchFailure None)
