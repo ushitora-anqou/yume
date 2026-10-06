@@ -96,6 +96,32 @@ Findings:
    wrk client (4 threads) is itself near saturation at ~12 GB/s; the
    nginx ceiling may be even higher.
 
+### Speeding up plain respond (string API)
+
+`Server.respond` (the string API) was also moved onto the single-copy
+path: the final `Response`-to-wire conversion (`respond_expert` in
+`src/server.ml`) now builds an expert response that copies the string
+into a Cstruct once and issues a single writev, instead of the cohttp
+pipeline. Measured with `/size/:kb` vs `/size-cs/:kb` on the bench
+server (`-t4 -c8`, 8s after warmup; `/size-cs` reuses a cached
+Cstruct):
+
+| body size | respond, cohttp pipeline (3 copies) | respond, fast path (1 copy) | respond_cstruct, reused (0 copies) |
+|---|---|---|---|
+| 1 MiB | 1.25 GB/s | 3.03 GB/s (2.4x) | 6.28 GB/s |
+| 4 MiB | 1.18 GB/s | 2.60 GB/s (2.2x) | 7.42 GB/s |
+| 16 MiB | 1.02 GB/s | 2.96 GB/s (2.9x) | 6.98 GB/s |
+| 32 MiB | 1.36 GB/s | 1.38 GB/s (1.0x) | 6.02 GB/s |
+
+- Plain `respond` gets **2.2–2.9x faster** for bodies up to ~16 MiB;
+  at 32 MiB the per-request 32MiB Cstruct allocation itself dominates
+  and cancels the win.
+- A string API cannot go below one copy per request: OCaml strings
+  live on the OCaml heap and cannot back a writev iovec, so the bytes
+  must be copied into a Bigarray (which is exactly what
+  `Cstruct.of_string` does). Reaching the 6–7 GB/s tier requires
+  reusing a pre-built Cstruct, i.e. `respond_cstruct`.
+
 ## Reproducing
 
 ```console

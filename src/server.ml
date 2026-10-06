@@ -333,6 +333,34 @@ let websocket (r : request) f = Ws_conn_man.start_ws_conn r f
 let ws_send = Bare_server.ws_send
 let ws_recv = Bare_server.ws_recv
 
+(* Fast final conversion from a [Response] to a bare response: builds
+   a fixed-length expert response so that the body costs a single
+   user-space copy (string -> Cstruct) followed by one writev,
+   instead of the cohttp body pipeline, which routes string bodies
+   through an Eio.Buf_read buffer and the Buf_write buffer (three
+   copies per byte, in small chunks). *)
+let respond_expert ~(bare_req : Bare_server.Request.t) ~(status : Status.t)
+    ~(headers : Headers.t) ~(body : string) : Bare_server.Response.t =
+  let keep_alive = Http.Request.is_keep_alive bare_req in
+  let headers = headers |> Headers.to_list |> Http.Header.of_list in
+  let headers =
+    match Http.Header.connection headers with
+    | Some _ -> headers
+    | None ->
+        Http.Header.add headers "connection"
+          (if keep_alive then "keep-alive" else "close")
+  in
+  let headers =
+    Http.Header.replace headers "content-length"
+      (string_of_int (String.length body))
+  in
+  let cs = Cstruct.of_string body in
+  `Expert
+    ( Http.Response.make ~status ~headers (),
+      fun _ic oc ->
+        (if Cstruct.length cs > 0 then Eio.Buf_write.schedule_cstruct oc cs);
+        Eio.Buf_write.flush oc )
+
 let start_server env ~sw ?(listen = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080))
     ?error_handler (handler : handler) k : unit =
   Ws_conn_man.start_global_runner env ~sw;
@@ -388,7 +416,8 @@ let start_server env ~sw ?(listen = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080))
               - error_handler is not specified; or
               - not erroneous response *)
       ->
-        Bare_server.respond ~status ~headers ~body
+        let (Request { bare_req; _ }) = req in
+        respond_expert ~bare_req ~status ~headers ~body
     | Response { status; headers; body; _ } ->
         let error_handler = Option.get error_handler in
         error_handler ~req ~status ~headers ~body |> aux false

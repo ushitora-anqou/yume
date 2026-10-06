@@ -149,6 +149,10 @@ let test_basics () =
         assert (Yume.Client.Response.status resp = `OK);
         let body = Yume.Client.Response.drain resp in
         assert (body = expected_get_response);
+        let hs = Yume.Client.Response.headers resp in
+        assert (
+          List.assoc `Content_length hs
+          = string_of_int (String.length expected_get_response));
 
         let resp =
           Yume.Client.get env ~sw

@@ -19,6 +19,10 @@
 
 let small = "hello"
 
+(* Cache of pre-built Cstructs for the /size-cs route, so that the
+   fast path reuses the same buffer across requests. *)
+let cs_cache : (int, Cstruct.t) Hashtbl.t = Hashtbl.create 16
+
 let () =
   let port = if Array.length Sys.argv > 1 then Sys.argv.(1) else "8080" in
   Eio_main.run @@ fun env ->
@@ -45,6 +49,25 @@ let () =
              cohttp body pipeline (no per-byte user-space copies) *)
           get "/large-expert" (fun _ _ ->
               respond_cstruct ~content_type:"application/octet-stream" large_cs);
+          (* sized variants for copy-cost analysis: /size builds a
+             fresh string per request (respond path), /size-cs reuses
+             a cached Cstruct (respond_cstruct path) *)
+          get "/size/:kb" (fun _ req ->
+              let kb = param_int ":kb" req in
+              respond
+                ~headers:[ (`Content_type, "application/octet-stream") ]
+                (String.make (kb * 1024) 'A'));
+          get "/size-cs/:kb" (fun _ req ->
+              let kb = param_int ":kb" req in
+              let cs =
+                match Hashtbl.find_opt cs_cache kb with
+                | Some cs -> cs
+                | None ->
+                    let cs = Cstruct.of_string (String.make (kb * 1024) 'A') in
+                    Hashtbl.replace cs_cache kb cs;
+                    cs
+              in
+              respond_cstruct ~content_type:"application/octet-stream" cs);
         ])
       default_handler
   in
