@@ -1,5 +1,6 @@
 (tests
  (names
+  test_header
   test_signature
   test_path_pattern
   test_ws
