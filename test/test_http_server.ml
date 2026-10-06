@@ -107,6 +107,11 @@ let test_basics () =
           get "/" (fun _ _ -> respond_html expected_get_response);
           get "/json" (fun _ _ -> respond_yojson expected_get_json_response);
           post "/" (fun _ req -> (* echo *) query "msg" req |> respond);
+          get "/param/:id" (fun _ req ->
+              let id = param_int ":id" req in
+              let n = query_int "n" req in
+              let m = Option.value (query_int_opt "m" req) ~default:0 in
+              respond_yojson (`Assoc [ ("id", `Int id); ("n", `Int n); ("m", `Int m) ]));
         ])
       default_handler
   in
@@ -152,6 +157,65 @@ let test_basics () =
         assert (Yume.Client.Response.status resp = `OK);
         let body = Yume.Client.Response.drain resp in
         assert (body = "hello");
+
+        let test_param url expected_status expected_body =
+          let resp = Yume.Client.get env ~sw url in
+          assert (Yume.Client.Response.status resp = expected_status);
+          match expected_body with
+          | None -> Yume.Client.Response.drain resp |> ignore
+          | Some expected ->
+              let body = Yume.Client.Response.drain resp in
+              assert (body = expected)
+        in
+        let url = Printf.sprintf "http://localhost:%d/param" listening_port in
+        test_param (url ^ "/12?n=34") `OK
+          (Some {|{"id":12,"n":34,"m":0}|});
+        (* optional query *)
+        test_param (url ^ "/12?n=34&m=56") `OK
+          (Some {|{"id":12,"n":34,"m":56}|});
+
+        Eio.Switch.fail sw Exit_normally)
+  with Exit_normally -> ()
+
+let test_param_int () =
+  Eio_main.run @@ fun env ->
+  Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
+  let handler =
+    let open Yume.Server in
+    Router.(
+      use
+        [
+          get "/param/:id" (fun _ req ->
+              let id = param_int ":id" req in
+              let n = query_int "n" req in
+              let m = Option.value (query_int_opt "m" req) ~default:0 in
+              respond_yojson (`Assoc [ ("id", `Int id); ("n", `Int n); ("m", `Int m) ]));
+        ])
+      default_handler
+  in
+  let listen =
+    Eio.Net.getaddrinfo_stream ~service:"0" env#net "localhost" |> List.hd
+  in
+  try
+    Eio.Switch.run @@ fun sw ->
+    Yume.Server.start_server env ~sw ~listen handler
+      (fun socket ->
+        let listening_port =
+          match Eio.Net.listening_addr socket with
+          | `Tcp (_, port) -> port
+          | _ -> assert false
+        in
+
+        let test_param url expected_status =
+          let resp = Yume.Client.get env ~sw url in
+          assert (Yume.Client.Response.status resp = expected_status)
+        in
+        let url = Printf.sprintf "http://localhost:%d/param" listening_port in
+        (* non-strict formats must be rejected *)
+        test_param (url ^ "/0x12?n=34") `Bad_request;
+        test_param (url ^ "/1_2?n=34") `Bad_request;
+        (* missing required query *)
+        test_param (url ^ "/12") `Bad_request;
 
         Eio.Switch.fail sw Exit_normally)
   with Exit_normally -> ()
@@ -292,6 +356,7 @@ let () =
   run "http server"
     [
       ("basics", [ test_case "case1" `Quick test_basics ]);
+      ("param", [ test_case "typed accessors" `Quick test_param_int ]);
       ( "formdata",
         [
           test_case "small image" `Quick (test_formdata_image test_image);

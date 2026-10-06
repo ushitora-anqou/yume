@@ -59,7 +59,34 @@ let body = function
       | Some raw_body, _ -> raw_body
       | _ -> failwith "body: none")
 
+(* Strict decimal integer parsing. [int_of_string] accepts non-decimal
+   formats such as "0x10" and "1_0", which is undesirable for HTTP
+   parameters. *)
+let parse_strict_int (s : string) : int =
+  if s = "" then failwith "parse_strict_int: empty string"
+  else
+    String.fold_left
+      (fun acc ch ->
+        let i = Char.code ch - Char.code '0' in
+        if not (0 <= i && i <= 9) then failwith "parse_strict_int: invalid digit"
+        else if acc > (max_int - i) / 10 then failwith "parse_strict_int: overflow"
+        else (acc * 10) + i)
+      0 s
+
 let param name = function Request { param; _ } -> List.assoc name param
+
+let param_opt name = function
+  | Request { param; _ } -> List.assoc_opt name param
+
+let strict_int_or_bad_request v =
+  match parse_strict_int v with
+  | i -> i
+  | exception Failure _ -> raise_error_response `Bad_request
+
+let param_int name (req : request) : int =
+  match param_opt name req with
+  | Some v -> strict_int_or_bad_request v
+  | None -> raise_error_response `Bad_request
 
 let string_of_yojson_atom = function
   | `Bool b -> string_of_bool b
@@ -119,6 +146,17 @@ let query ?default name req =
       | _ -> raise_error_response `Bad_request)
 
 let query_opt name r = try Some (query name r) with _ -> None
+
+let query_int ?default name (req : request) : int =
+  match query_opt name req with
+  | Some v -> strict_int_or_bad_request v
+  | None -> (
+      match default with
+      | Some d -> d
+      | None -> raise_error_response `Bad_request)
+
+let query_int_opt name (req : request) : int option =
+  query_opt name req |> Option.map strict_int_or_bad_request
 
 let header_opt name : request -> string option = function
   | Request { headers; _ } -> headers |> List.assoc_opt name
