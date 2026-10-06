@@ -151,7 +151,10 @@ let lower_string_of_name : name -> string = function
   | `Proxy_authentication_info -> "proxy-authentication-info"
   | `Proxy_authorization -> "proxy-authorization"
   | `Range -> "range"
-  | `Raw s -> s
+  (* Raw names are lowercased so that they compare equal to the
+     lowercase names produced by [name_of_string], e.g. when building
+     signing strings. *)
+  | `Raw s -> String.lowercase_ascii s
   | `Referer -> "referer"
   | `Retry_after -> "retry-after"
   | `Sec_websocket_accept -> "sec-websocket-accept"

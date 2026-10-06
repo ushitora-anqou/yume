@@ -111,7 +111,8 @@ let test_case_insensitive () =
 let test_raw () =
   assert (Header.name_of_string "x-anqou" = `Raw "x-anqou");
   assert (Header.name_of_string "X-Anqou" = `Raw "x-anqou");
-  assert (Header.lower_string_of_name (`Raw "X-Anqou") = "X-Anqou");
+  (* Raw names are lowercased, matching name_of_string's behaviour *)
+  assert (Header.lower_string_of_name (`Raw "X-Anqou") = "x-anqou");
   assert (Header.string_of_name (`Raw "x-anqou") = "x-anqou");
   ()
 
