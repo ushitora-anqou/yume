@@ -300,11 +300,10 @@ let parse_body ~max_body_size ~bare_req ~body ~headers =
 
 let default_handler : handler =
  fun _env -> function
-  | Request req ->
-      let status =
-        match req.meth with `GET -> `Not_found | _ -> `Method_not_allowed
-      in
-      respond ~status ""
+  | Request _ ->
+      (* Method mismatches are handled by Router.use with 405 + Allow;
+         reaching the default handler means the path does not exist. *)
+      respond ~status:`Not_found ""
 
 (* Run [handler], converting exceptions into error responses:
    [ErrorResponse] carries its own status, and any other exception
@@ -542,24 +541,44 @@ module Router = struct
 
     match req with
     | Request req -> (
-        (* Choose correct handler from routes *)
-        let param, handler =
-          routes
-          |> List.find_map (fun (meth', pat, handler) ->
-              let matched =
-                match (req.meth, meth') with
-                | m1, m2 when m1 = m2 -> true
-                | `HEAD, `GET -> true
-                | _ -> false
-              in
-              if not matched then None
-              else
-                Path_pattern.perform ~pat req.path
-                |> Option.map (fun param -> (param, handler)))
-          |> Option.value ~default:([], inner_handler)
+        (* Choose the handler from routes: the first route whose path
+           matches and whose method matches (with `HEAD falling back
+           to `GET). A path match with no method match is a 405 with
+           an Allow header; no path match at all falls through to
+           [inner_handler] (usually a 404). *)
+        let path_matched =
+          List.filter_map
+            (fun (meth', pat, handler) ->
+              Path_pattern.perform ~pat req.path
+              |> Option.map (fun param -> (meth', param, handler)))
+            routes
         in
-        let req = Request { req with param } in
-        let resp = run_handler handler env req in
+        let exact =
+          List.find_map
+            (fun (meth', param, handler) ->
+              let matched =
+                req.meth = meth' || (req.meth = `HEAD && meth' = `GET)
+              in
+              if matched then Some (param, handler) else None)
+            path_matched
+        in
+        let resp =
+          match exact with
+          | Some (param, handler) ->
+              let req = Request { req with param } in
+              run_handler handler env req
+          | None -> (
+              match path_matched with
+              | (_, _, _) :: _ ->
+                  let allow =
+                    path_matched |> List.map (fun (m, _, _) -> m)
+                    |> List.sort_uniq compare
+                    |> List.map Method.to_string |> String.concat ", "
+                  in
+                  respond ~status:`Method_not_allowed
+                    ~headers:[ (`Allow, allow) ] ""
+              | [] -> inner_handler env (Request req))
+        in
         match resp with
         | Response ({ status; tags; _ } as r) when Status.is_error status ->
             Response { r with tags = "log" :: tags }
@@ -589,8 +608,8 @@ module Cors = struct
 
   let use (src : t list) (inner_handler : handler) env (req : request) :
       response =
-    (* Handler for preflight OPTIONS requests *)
-    let handler (r : t) _ (req : request) : response =
+    (* Preflight handler *)
+    let preflight (r : t) (req : request) : response =
       let headers =
         [
           ( `Access_control_allow_methods,
@@ -609,9 +628,10 @@ module Cors = struct
       respond ~status:`No_content ~headers ""
     in
 
-    (* Construct routes for preflight requests *)
-    let routes =
-      src |> List.map (fun (r : t) -> Router.options r.target (handler r))
+    let path_match path =
+      src
+      |> List.find_opt (fun { target_pat; _ } ->
+          Path_pattern.perform ~pat:target_pat path |> Option.is_some)
     in
 
     let make_cors_headers { origin; expose; _ } headers =
@@ -621,40 +641,39 @@ module Cors = struct
       :: headers
     in
 
-    (* Construct router *)
-    Router.use routes
-      (fun env -> function
-        (* Fallback handler: apply inner_handler, and
-           if path matches, append CORS headers *)
-        | Request { path; _ } as req -> (
-            let path_match =
-              src
-              |> List.find_opt (fun { target_pat; _ } ->
-                  Path_pattern.perform ~pat:target_pat path |> Option.is_some)
-            in
-            let resp = inner_handler env req in
-            match (resp, path_match) with
-            | _, None -> resp
-            | BareResponse (`Expert (expert_resp, handler)), Some path_match ->
-                BareResponse
-                  (`Expert
-                     ( {
-                         expert_resp with
-                         headers =
-                           expert_resp.headers |> Http.Header.to_list
-                           |> Headers.of_list
-                           |> make_cors_headers path_match
-                           |> Headers.to_list |> Http.Header.of_list;
-                       },
-                       handler ))
-            | BareResponse _, _ -> resp
-            | Response res, Some path_match ->
-                Response
-                  {
-                    res with
-                    headers = make_cors_headers path_match res.headers;
-                  }))
-      env req
+    match req with
+    | Request ({ meth = `OPTIONS; path; _ } as req) -> (
+        (* Preflight requests are intercepted directly rather than
+           routed, so that Router's method-mismatch handling (405)
+           does not swallow them. *)
+        match path_match path with
+        | Some r -> preflight r (Request req)
+        | None -> inner_handler env (Request req))
+    | Request ({ path; _ } as req) -> (
+        (* Apply inner_handler, and if path matches, append CORS
+           headers *)
+        let resp = inner_handler env (Request req) in
+        match (resp, path_match path) with
+        | _, None -> resp
+        | BareResponse (`Expert (expert_resp, handler)), Some path_match ->
+            BareResponse
+              (`Expert
+                 ( {
+                     expert_resp with
+                     headers =
+                       expert_resp.headers |> Http.Header.to_list
+                       |> Headers.of_list
+                       |> make_cors_headers path_match
+                       |> Headers.to_list |> Http.Header.of_list;
+                   },
+                   handler ))
+        | BareResponse _, _ -> resp
+        | Response res, Some path_match ->
+            Response
+              {
+                res with
+                headers = make_cors_headers path_match res.headers;
+              })
 end
 
 (* Middlware Logger *)

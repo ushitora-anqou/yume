@@ -478,6 +478,53 @@ let test_framing_headers () =
         Eio.Switch.fail sw Exit_normally)
   with Exit_normally -> ()
 
+(* Unknown paths are 404 for every method; a known path with the
+   wrong method is 405 with an Allow header. *)
+let test_404_405 () =
+  Eio_main.run @@ fun env ->
+  Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
+  let handler =
+    let open Yume.Server in
+    Router.(use [ post "/only" (fun _ _ -> respond "posted") ] default_handler)
+  in
+  let listen =
+    Eio.Net.getaddrinfo_stream ~service:"0" env#net "localhost" |> List.hd
+  in
+  try
+    Eio.Switch.run @@ fun sw ->
+    Yume.Server.start_server env ~sw ~listen handler (fun socket ->
+        let listen_addr =
+          match Eio.Net.listening_addr socket with
+          | `Tcp (_, _) as addr -> addr
+          | _ -> assert false
+        in
+        let request meth path =
+          raw_request ~sw env listen_addr
+            (Printf.sprintf
+               "%s %s HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+               meth path)
+        in
+        let status_and_headers resp =
+          let headers, body = split_headers_body resp in
+          ignore body;
+          (String.sub headers 9 3, headers)
+        in
+        (* wrong method on an existing path: 405 + Allow *)
+        let status, headers = request "GET" "/only" |> status_and_headers in
+        assert (status = "405");
+        assert (header_value headers "allow" = Some "POST");
+        (* DELETE on an existing path: also 405 *)
+        let status, _ = request "DELETE" "/only" |> status_and_headers in
+        assert (status = "405");
+        (* unknown path: 404 for GET and for POST *)
+        let status, _ = request "GET" "/nonexistent" |> status_and_headers in
+        assert (status = "404");
+        let status, _ = request "POST" "/nonexistent" |> status_and_headers in
+        assert (status = "404");
+
+        Eio.Switch.fail sw Exit_normally)
+  with Exit_normally -> ()
+
 let test_param_int () =
   Eio_main.run @@ fun env ->
   Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
@@ -683,6 +730,7 @@ let () =
       ("head", [ test_case "no body" `Quick test_head ]);
       ( "framing",
         [ test_case "header replacement" `Quick test_framing_headers ]);
+      ("404_405", [ test_case "status and allow" `Quick test_404_405 ]);
       ("param", [ test_case "typed accessors" `Quick test_param_int ]);
       ( "formdata",
         [
