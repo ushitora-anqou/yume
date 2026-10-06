@@ -83,13 +83,7 @@
                   })
                 else prev.${p})
               prev
-          )
-          // {
-            utop = prev.utop.overrideAttrs (previousAttrs: {
-              # cf. https://github.com/tweag/opam-nix/issues/112#issuecomment-2693392340
-              sourceRoot = ".";
-            });
-          };
+          );
         scope' = scope.overrideScope overlay;
         # Packages from devPackagesQuery
         devPackages = builtins.attrValues (pkgs.lib.getAttrs (builtins.attrNames devPackagesQuery) scope');
