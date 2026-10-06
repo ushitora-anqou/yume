@@ -68,6 +68,48 @@ let () =
                     cs
               in
               respond_cstruct ~content_type:"application/octet-stream" cs);
+          (* chunked streaming variants: /stream writes 1MiB string
+             chunks (one copy per chunk), /stream-cs writes a reused
+             1MiB Cstruct chunk (zero copies) *)
+          get "/stream/:kb" (fun _ req ->
+              let kb = param_int ":kb" req in
+              let total = kb * 1024 in
+              let chunk = String.make (1024 * 1024) 'A' in
+              respond_chunked ~content_type:"application/octet-stream"
+                (fun _ic oc ->
+                  let rec loop sent =
+                    if sent < total then (
+                      let n = min (String.length chunk) (total - sent) in
+                      Chunked.write oc
+                        (if n = String.length chunk then chunk
+                         else String.sub chunk 0 n);
+                      loop (sent + n))
+                  in
+                  loop 0));
+          get "/stream-cs/:kb" (fun _ req ->
+              let kb = param_int ":kb" req in
+              let total = kb * 1024 in
+              let chunk =
+                match Hashtbl.find_opt cs_cache 1024 with
+                | Some cs -> cs
+                | None ->
+                    let cs =
+                      Cstruct.of_string (String.make (1024 * 1024) 'A')
+                    in
+                    Hashtbl.replace cs_cache 1024 cs;
+                    cs
+              in
+              respond_chunked ~content_type:"application/octet-stream"
+                (fun _ic oc ->
+                  let rec loop sent =
+                    if sent < total then (
+                      let n = min (Cstruct.length chunk) (total - sent) in
+                      Chunked.write_cstruct oc
+                        (if n = Cstruct.length chunk then chunk
+                         else Cstruct.sub chunk 0 n);
+                      loop (sent + n))
+                  in
+                  loop 0));
         ])
       default_handler
   in

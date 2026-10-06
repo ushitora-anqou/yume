@@ -111,6 +111,15 @@ let test_basics () =
               respond_chunked ~content_type:"text/plain" (fun _ic oc ->
                   Chunked.write oc "hello, ";
                   Chunked.write oc "world"));
+          get "/chunked-cs" (fun _ _ ->
+              respond_chunked ~content_type:"text/plain" (fun _ic oc ->
+                  Chunked.write_cstruct oc (Cstruct.of_string "hello, ");
+                  Chunked.write_cstruct oc (Cstruct.of_string "world")));
+          get "/chunked-cs-empty" (fun _ _ ->
+              (* an empty Cstruct terminates the body, same as [write ""] *)
+              respond_chunked ~content_type:"text/plain" (fun _ic oc ->
+                  Chunked.write_cstruct oc (Cstruct.of_string "hello");
+                  Chunked.write_cstruct oc Cstruct.empty));
           get "/cstruct" (fun _ _ ->
               respond_cstruct ~content_type:"application/octet-stream"
                 (Cstruct.of_string "hello cstruct"));
@@ -179,6 +188,22 @@ let test_basics () =
         assert (body = "hello, world");
         let hs = Yume.Client.Response.headers resp in
         assert (List.assoc `Content_type hs = "text/plain");
+
+        let resp =
+          Yume.Client.get env ~sw
+            (Printf.sprintf "http://localhost:%d/chunked-cs" listening_port)
+        in
+        assert (Yume.Client.Response.status resp = `OK);
+        let body = Yume.Client.Response.drain resp in
+        assert (body = "hello, world");
+
+        let resp =
+          Yume.Client.get env ~sw
+            (Printf.sprintf "http://localhost:%d/chunked-cs-empty" listening_port)
+        in
+        assert (Yume.Client.Response.status resp = `OK);
+        let body = Yume.Client.Response.drain resp in
+        assert (body = "hello");
 
         let resp =
           Yume.Client.get env ~sw

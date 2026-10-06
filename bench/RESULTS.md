@@ -122,6 +122,24 @@ Cstruct):
   `Cstruct.of_string` does). Reaching the 6–7 GB/s tier requires
   reusing a pre-built Cstruct, i.e. `respond_cstruct`.
 
+### Speeding up expert-handler streaming
+
+Chunked streaming through `respond_chunked` + `Expert` handlers gets
+the same treatment via `Chunked.write_cstruct`: the chunk framing
+(`%x\r\n` / `\r\n`) stays buffered while the data itself is enqueued
+with `Eio.Buf_write.schedule_cstruct` (which flushes pending buffered
+data first, so framing/data ordering is preserved). Measured sending
+16MiB as sixteen 1MiB chunks (`/stream` vs `/stream-cs`, reusing one
+chunk buffer, `-t4 -c8`, 8s after warmup):
+
+| path | per-chunk copies | throughput |
+|---|---|---|
+| `/stream` (`Chunked.write`, string) | 1 | 3.15 GB/s |
+| `/stream-cs` (`Chunked.write_cstruct`, reused Cstruct) | 0 | **5.95 GB/s (1.9x)** |
+
+So streaming handlers that already hold their data in Cstructs (or
+can reuse one) reach the same ~6 GB/s tier as `respond_cstruct`.
+
 ## Reproducing
 
 ```console
