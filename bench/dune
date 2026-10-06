@@ -1,3 +1,7 @@
 (executable
  (name yume_server)
- (libraries eio eio.core eio_main yume))
+ (libraries bigstringaf cohttp cohttp-eio cstruct eio eio.core eio_main yume))
+
+(executable
+ (name raw_server)
+ (libraries bigstringaf cstruct eio eio.core eio.unix eio_main))

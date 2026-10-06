@@ -64,11 +64,55 @@ req/s for the 32 MiB body.)
   yume; applications that need to push multi-GiB/s static content
   should front yume with a reverse proxy, as is common practice.
 
+## Follow-up: where the large-response gap comes from
+
+Additional measurements isolate how much of the 8.5x gap each layer
+contributes (same 32MiB body, `-t4 -c8`, single runs after warmup):
+
+| server | body path | throughput |
+|---|---|---|
+| yume `respond` | cohttp `flow_to_writer`: Buf_read copy + `take` string + `Buf_write.string` (3 user-space copies/byte) | 1.36 GB/s |
+| yume `/large-expert` (Expert handler + `Buf_write.schedule_cstruct`) | zero user-space copies, single writev | **5.81 GB/s** |
+| raw eio server (`bench/raw_server.ml`, no cohttp at all) | same as above | 6.37 GB/s |
+| nginx, 1 worker (sendfile) | kernel zero-copy | 11.81 GB/s |
+| nginx, 2 workers (sendfile) | kernel zero-copy | ~11.6–11.9 GB/s |
+
+Findings:
+
+1. **~4.3x of the gap is recoverable within yume today.** The
+   bottleneck is cohttp's body pipeline (`Utils.flow_to_writer`
+   routes the body through an `Eio.Buf_read` buffer and re-creates
+   strings before writing them into the `Buf_write`), not eio and not
+   OCaml. Serving large bodies through an Expert handler with
+   `Eio.Buf_write.schedule_cstruct` (a Cstruct built once, then
+   enqueued without copying) reaches 5.81 GB/s — 91% of the raw-eio
+   ceiling. A convenience API around this pattern (e.g.
+   `respond_cstruct`) would make the fast path ergonomic.
+2. **The remaining ~2x vs nginx is structural.** nginx's sendfile
+   moves data page-cache-to-socket inside the kernel; an application
+   server holding the body in OCaml strings must cross the kernel
+   boundary per writev. Closing it would require mmap-backed bodies +
+   sendfile or vmsplice/splice plumbing, which is beyond a web
+   framework layer.
+3. The single-worker nginx number matches the two-worker one, so the
+   wrk client (4 threads) is itself near saturation at ~12 GB/s; the
+   nginx ceiling may be even higher.
+
 ## Reproducing
 
 ```console
-$ nix develop -c dune build bench/yume_server.exe
+$ nix develop -c dune build bench/yume_server.exe bench/raw_server.exe
 $ nix shell nixpkgs#wrk nixpkgs#nginx --command bench/run.sh
+```
+
+The extra `/large-expert` route and `raw_server.exe` (used in the
+follow-up section above) can be measured manually:
+
+```console
+$ nix develop -c ./_build/default/bench/yume_server.exe 8080 &
+$ wrk -t4 -c8 -d10s http://127.0.0.1:8080/large-expert
+$ nix develop -c ./_build/default/bench/raw_server.exe 8082 &
+$ wrk -t4 -c8 -d10s http://127.0.0.1:8082/large
 ```
 
 Tunables: `DURATION` (default `10s`), `SMALL_PARAMS` (default
