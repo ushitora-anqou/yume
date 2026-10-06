@@ -26,6 +26,9 @@
   ptime
   ptime.clock
   ptime.clock.os
+  tls
+  tls-eio
+  unix
   websocket
   x509
   yume
