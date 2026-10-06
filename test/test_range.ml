@@ -4,6 +4,9 @@ let test_of_string () =
   assert (Range.of_string "bytes=0-100" = [ `Both (0, 100) ]);
   assert (Range.of_string "bytes=100-" = [ `Start 100 ]);
   assert (Range.of_string "bytes=-100" = [ `End 100 ]);
+  (* the unit is case-insensitive *)
+  assert (Range.of_string "Bytes=0-100" = [ `Both (0, 100) ]);
+  assert (Range.of_string "BYTES=-100" = [ `End 100 ]);
   assert (
     Range.of_string "bytes=0-100, 200-300"
     = [ `Both (0, 100); `Both (200, 300) ]);
@@ -29,15 +32,19 @@ let test_is_valid () =
     assert (Range.is_valid ~file_size r = expected)
   in
   valid ~file_size:1000 [ `Both (0, 100) ] true;
-  valid ~file_size:1000 [ `Both (0, 1000) ] false;
+  (* a last-byte-pos at or beyond the end denotes the remainder *)
+  valid ~file_size:1000 [ `Both (0, 1000) ] true;
+  valid ~file_size:1000 [ `Both (0, 5000) ] true;
+  valid ~file_size:1000 [ `End 1000 ] true;
   valid ~file_size:1000 [ `Start 999 ] true;
+  (* an unsatisfiable first-byte-pos is invalid *)
   valid ~file_size:1000 [ `Start 1000 ] false;
+  valid ~file_size:1000 [ `Both (1000, 2000) ] false;
   valid ~file_size:1000 [ `End 0 ] false;
   valid ~file_size:1000 [ `End 1 ] true;
-  valid ~file_size:1000 [ `End 1000 ] false;
   valid ~file_size:1000 [ `Both (5, 3) ] false;
   valid ~file_size:1000 [ `Both (0, 100); `Both (200, 300) ] true;
-  valid ~file_size:1000 [ `Both (0, 100); `Both (0, 1000) ] false;
+  valid ~file_size:1000 [ `Both (0, 100); `Both (0, 1000) ] true;
   ()
 
 let test_response_values () =
@@ -46,12 +53,21 @@ let test_response_values () =
   assert (
     Range.content_range ~file_size:1000 (`Start 900) = "bytes 900-999/1000");
   assert (Range.content_range ~file_size:1000 (`End 100) = "bytes 900-999/1000");
+  (* clamped to the end of the representation *)
+  assert (
+    Range.content_range ~file_size:1000 (`Both (0, 1000)) = "bytes 0-999/1000");
+  assert (
+    Range.content_range ~file_size:1000 (`End 1000) = "bytes 0-999/1000");
   assert (Range.content_length ~file_size:1000 (`Both (0, 100)) = 101);
   assert (Range.content_length ~file_size:1000 (`Start 900) = 100);
   assert (Range.content_length ~file_size:1000 (`End 100) = 100);
+  assert (Range.content_length ~file_size:1000 (`End 1000) = 1000);
+  assert (Range.content_length ~file_size:1000 (`Both (0, 1000)) = 1000);
   assert (Range.offset_length ~file_size:1000 (`Both (0, 100)) = (0, 101));
   assert (Range.offset_length ~file_size:1000 (`Start 900) = (900, 100));
   assert (Range.offset_length ~file_size:1000 (`End 100) = (900, 100));
+  assert (Range.offset_length ~file_size:1000 (`End 1000) = (0, 1000));
+  assert (Range.offset_length ~file_size:1000 (`Both (0, 1000)) = (0, 1000));
   ()
 
 let () =
