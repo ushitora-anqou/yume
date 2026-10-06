@@ -57,9 +57,16 @@ QwIDAQAB
     Some
       {|{"@context":"https://www.w3.org/ns/activitystreams","id":"http://localhost:3000/388ac00f-5be9-43fd-b661-b5a6c39014a0","type":"Follow","actor":"http://localhost:3000/users/admin","object":"https://c5ab-220-153-158-42.ngrok.io/users/anqou"}|}
   in
+  let parsed =
+    match
+      Signature.parse_signature_header
+        {|keyId="http://localhost:3000/users/admin#main-key",algorithm="rsa-sha256",headers="(request-target) host date digest content-type",signature="rBIJyKvBjWlEsfhrqsxfZBWg3Vqwck5MHl9ohlG33mb8kUiZcTx7j7NLljXj8KIW4Gli61Jxmyu1EynRbWmYcvEm2ONa38+GzW9Pqnlm3Bli7yNzp4ga3BC1hrWh6V4sc8c7nHJix8qXKirmfmwtk9VNCxkWvwVRwJY5KHO/6ANDft81njlegvbnRdptbnubNOh8cmfz0y8vWyAMxSCmbKbc6M80WECw4Z+uHRh1LpunLerwAaNQNNLJ+MwjzyPznRkcKwem/RpZaUgIFNxH7N7HH87jp/737xwDlwZZQsiONhvGfn88rNZyZVUSnuZtom4oJQqKho6mmwTr2QhwJA=="|}
+    with
+    | Ok p -> p
+    | Error e -> failwith ("parse_signature_header: " ^ e)
+  in
   let { Signature.key_id; algorithm; headers = signed_headers; signature } =
-    Signature.parse_signature_header
-      {|keyId="http://localhost:3000/users/admin#main-key",algorithm="rsa-sha256",headers="(request-target) host date digest content-type",signature="rBIJyKvBjWlEsfhrqsxfZBWg3Vqwck5MHl9ohlG33mb8kUiZcTx7j7NLljXj8KIW4Gli61Jxmyu1EynRbWmYcvEm2ONa38+GzW9Pqnlm3Bli7yNzp4ga3BC1hrWh6V4sc8c7nHJix8qXKirmfmwtk9VNCxkWvwVRwJY5KHO/6ANDft81njlegvbnRdptbnubNOh8cmfz0y8vWyAMxSCmbKbc6M80WECw4Z+uHRh1LpunLerwAaNQNNLJ+MwjzyPznRkcKwem/RpZaUgIFNxH7N7HH87jp/737xwDlwZZQsiONhvGfn88rNZyZVUSnuZtom4oJQqKho6mmwTr2QhwJA=="|}
+    parsed
   in
   assert (key_id = "http://localhost:3000/users/admin#main-key");
   assert (algorithm = "rsa-sha256");
@@ -158,13 +165,102 @@ KgbztieZwDBihVKbPtiaiGxeNXrxGWfL37BB0Jcy/RRYomLBjwTj2Ks=
     headers = signed_headers;
     signature;
   } =
-    List.assoc `Signature new_headers |> Signature.parse_signature_header
+    match
+      List.assoc `Signature new_headers |> Signature.parse_signature_header
+    with
+    | Ok p -> p
+    | Error e -> failwith ("parse_signature_header: " ^ e)
   in
   assert (key_id = key_id');
   assert (
     Result.is_ok
     @@ Signature.verify ~pub_key ~algorithm ~signed_headers ~signature ~headers
          ~meth ~path ~body)
+
+let test_parse_signature_header () =
+  (* malformed input is an Error, never an exception *)
+  (match Signature.parse_signature_header "nonsense" with
+   | Error _ -> () | Ok _ -> assert false);
+  (match Signature.parse_signature_header {|keyId=a|} with
+   | Error _ -> () | Ok _ -> assert false);
+  (match Signature.parse_signature_header {|keyId="unterminated|} with
+   | Error _ -> () | Ok _ -> assert false);
+  (match Signature.parse_signature_header {|keyId="a",keyId="b"|} with
+   | Error _ -> () | Ok _ -> assert false);
+  (match Signature.parse_signature_header {|algorithm="x"|} with
+   | Error _ -> () | Ok _ -> assert false);
+  (* commas inside values *)
+  (match
+    Signature.parse_signature_header
+      {|keyId="http://localhost:3000/users/a,b",algorithm="rsa-sha256",headers="host",signature="c2ln=="|}
+    with
+   | Ok { Signature.key_id; signature; _ } ->
+       assert (key_id = "http://localhost:3000/users/a,b");
+       assert (signature = "c2ln==")
+   | Error e -> failwith ("parse_signature_header: " ^ e));
+  (* escaped quotes and backslashes round-trip *)
+  let header =
+    Signature.make_signature_header ~key_id:"a\"b\\c" ~signature:"sig"
+      ~algorithm:"rsa-sha256" ~headers:[ "host" ] ()
+  in
+  match
+    Signature.string_of_signature_header header
+    |> Signature.parse_signature_header
+  with
+  | Ok { Signature.key_id; _ } -> assert (key_id = "a\"b\\c")
+  | Error e -> failwith ("parse_signature_header: " ^ e)
+
+let test_verify_errors () =
+  let pub_key =
+    X509.Public_key.decode_pem
+      {|
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4XhCcviDkcNrTyJHrqZZ
+xO7huHxJ/RopvHLA3sa8a7LB121TVfP0id861XCSu1Tr5MIkhjjsIsEhBfqIm+bn
+GxnZtD47XpAM7fvspFbgm9sWjG6XKxDRkxmpn61gwU75tn9W9pm9DwCmeyj2OnB3
+LH0qePxLndozbLExqlbUXAaK+1ebMb1X2N4n5qJE4soBK7loK5P8YVT2Jfhi4diY
+XLm9/V7pLtrZwchdQ8i0qscMpd0Of12soXXuYCYXEXv/zO0eqmroET6avzrIdp8P
+n5kP8scEXuNyji8cqYXGoK6JyeMXhLoI/bfy3pK4inNu8hSBOmCcKpTejrRChCdk
+QwIDAQAB
+-----END PUBLIC KEY-----
+ |}
+    |> Result.get_ok
+  in
+  let headers = [ (`Host, "example.com") ] in
+  (* bad base64 must not raise *)
+  (match
+     Signature.verify ~pub_key ~algorithm:"rsa-sha256"
+       ~signed_headers:[ "host" ] ~signature:"!!!"
+       ~headers ~meth:`POST ~path:"/" ~body:None
+   with
+   | Error (`VerificationFailure _) -> ()
+   | _ -> assert false);
+  (* algorithm not implemented *)
+  (match
+     Signature.verify ~pub_key ~algorithm:"hmac-sha256"
+       ~signed_headers:[ "host" ] ~signature:"c2ln=="
+       ~headers ~meth:`POST ~path:"/" ~body:None
+   with
+   | Error `AlgorithmNotImplemented -> ()
+   | _ -> assert false);
+  (* Digest header not matching the body *)
+  (match
+     Signature.verify ~pub_key ~algorithm:"rsa-sha256"
+       ~signed_headers:[ "host" ] ~signature:"c2ln=="
+       ~headers:[ (`Host, "example.com"); (`Digest, "SHA-256=AAAA") ]
+       ~meth:`POST ~path:"/" ~body:(Some "tampered")
+   with
+   | Error `DigestMismatch -> ()
+   | _ -> assert false);
+  (* signed header missing from the request *)
+  (match
+     Signature.verify ~pub_key ~algorithm:"rsa-sha256"
+       ~signed_headers:[ "date" ] ~signature:"c2ln=="
+       ~headers ~meth:`POST ~path:"/" ~body:None
+   with
+   | Error (`VerificationFailure _) -> ()
+   | _ -> assert false);
+  ()
 
 let () =
   let open Alcotest in
@@ -175,4 +271,7 @@ let () =
         [ test_case "case1" `Quick test_build_signing_string ] );
       ("sign", [ test_case "case1" `Quick test_sign ]);
       ("verify", [ test_case "case1" `Quick test_verify ]);
+      ( "parse_signature_header",
+        [ test_case "malformed input" `Quick test_parse_signature_header ] );
+      ("verify_errors", [ test_case "errors" `Quick test_verify_errors ]);
     ]
