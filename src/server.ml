@@ -360,11 +360,22 @@ module Ws_conn_man = struct
                   m "websocket handler raised: %s: %s" (Printexc.to_string e)
                     (Printexc.get_backtrace ()))
           in
+          (* Setting up the connection must not kill the runner: a
+             failure is answered with a 500 so the caller unblocks,
+             and the loop keeps serving later requests. Cancellation
+             (when [sw] closes) still propagates, via the stream
+             operations outside this match. *)
           let resp =
             match req with
-            | Request { bare_req; _ } ->
-                let r = Bare_server.websocket env ~sw bare_req callback in
-                BareResponse r
+            | Request { bare_req; _ } -> (
+                match Bare_server.websocket env ~sw bare_req callback with
+                | r -> BareResponse r
+                | exception e ->
+                    Logs.err (fun m ->
+                        m "websocket setup failed: %s: %s"
+                          (Printexc.to_string e)
+                          (Printexc.get_backtrace ()));
+                    respond ~status:`Internal_server_error "")
           in
           Eio.Stream.add recv_stream resp;
           loop ()

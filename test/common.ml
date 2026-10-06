@@ -47,6 +47,8 @@ let pretty_reporter ~formatter ?(src_width = 5) () =
   in
   { Logs.report }
 
+exception Exit_normally
+
 let setup_logs () =
   let formatter = Fmt.stdout in
   Fmt.set_style_renderer Fmt.stdout `Ansi_tty;

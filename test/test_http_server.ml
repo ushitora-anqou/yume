@@ -91,7 +91,7 @@ cmVyAEdJTVBMnpDKAAAADnRFWHRpY2M6bW9kZWwAc1JHQltgSUMAAAAASUVORK5CYII=|}
 
 let error_handler ~req:_ ~status:_ ~headers:_ ~body:_ = assert false
 
-exception Exit_normally
+
 
 (* Send [payload] over a raw socket and read the whole response (the
    server must close the connection, e.g. via "Connection: close"). *)
@@ -301,8 +301,8 @@ let test_basics () =
         test_param (url ^ "/12?n=34&m=56") `OK
           (Some {|{"id":12,"n":34,"m":56}|});
 
-        Eio.Switch.fail sw Exit_normally)
-  with Exit_normally -> ()
+        Eio.Switch.fail sw Common.Exit_normally)
+  with Common.Exit_normally -> ()
 
 let test_body_parsing () =
   Eio_main.run @@ fun env ->
@@ -360,8 +360,8 @@ let test_body_parsing () =
         in
         assert (String.starts_with ~prefix:"HTTP/1.1 413" resp);
 
-        Eio.Switch.fail sw Exit_normally)
-  with Exit_normally -> ()
+        Eio.Switch.fail sw Common.Exit_normally)
+  with Common.Exit_normally -> ()
 
 (* RFC 9110 9.3.2: HEAD responses must carry the Content-Length of the
    corresponding GET but no body, whatever response constructor the
@@ -411,8 +411,8 @@ let test_head () =
         check "/" (string_of_int (String.length "hello, head"));
         check "/cstruct" (string_of_int (String.length expected_body));
 
-        Eio.Switch.fail sw Exit_normally)
-  with Exit_normally -> ()
+        Eio.Switch.fail sw Common.Exit_normally)
+  with Common.Exit_normally -> ()
 
 (* User-supplied framing headers must be replaced, not duplicated. *)
 let test_framing_headers () =
@@ -475,8 +475,8 @@ let test_framing_headers () =
         assert (
           header_values headers "content-type" = [ "application/octet-stream" ]);
 
-        Eio.Switch.fail sw Exit_normally)
-  with Exit_normally -> ()
+        Eio.Switch.fail sw Common.Exit_normally)
+  with Common.Exit_normally -> ()
 
 (* Unknown paths are 404 for every method; a known path with the
    wrong method is 405 with an Allow header. *)
@@ -522,8 +522,8 @@ let test_404_405 () =
         let status, _ = request "POST" "/nonexistent" |> status_and_headers in
         assert (status = "404");
 
-        Eio.Switch.fail sw Exit_normally)
-  with Exit_normally -> ()
+        Eio.Switch.fail sw Common.Exit_normally)
+  with Common.Exit_normally -> ()
 
 let test_param_int () =
   Eio_main.run @@ fun env ->
@@ -565,8 +565,8 @@ let test_param_int () =
         (* missing required query *)
         test_param (url ^ "/12") `Bad_request;
 
-        Eio.Switch.fail sw Exit_normally)
-  with Exit_normally -> ()
+        Eio.Switch.fail sw Common.Exit_normally)
+  with Common.Exit_normally -> ()
 
 let upload_media env ~filename ~data ~content_type ~url =
   let headers =
@@ -628,8 +628,8 @@ let test_formdata_image image_data () =
         in
         assert (resp = image_data);
 
-        Eio.Switch.fail sw Exit_normally)
-  with Exit_normally -> ()
+        Eio.Switch.fail sw Common.Exit_normally)
+  with Common.Exit_normally -> ()
 
 let test_cors_allow_all () =
   Eio_main.run @@ fun env ->
@@ -695,8 +695,8 @@ let test_cors_allow_all () =
         test_get "/";
         test_get "/expert";
 
-        Eio.Switch.fail sw Exit_normally)
-  with Exit_normally -> ()
+        Eio.Switch.fail sw Common.Exit_normally)
+  with Common.Exit_normally -> ()
 
 let test_start_server_on () =
   Eio_main.run @@ fun env ->
@@ -717,8 +717,8 @@ let test_start_server_on () =
         let body = Yume.Client.Response.drain resp in
         assert (body = "hello");
 
-        Eio.Switch.fail sw Exit_normally)
-  with Exit_normally -> ()
+        Eio.Switch.fail sw Common.Exit_normally)
+  with Common.Exit_normally -> ()
 
 let () =
   let open Alcotest in
