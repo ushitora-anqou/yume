@@ -2,6 +2,7 @@ module Path_pattern = Path_pattern
 module Status = Status
 module Header = Header
 module Headers = Headers
+module Range = Range
 module Method = Method
 module Ws = Ws
 module Bare_server = Bare_server
