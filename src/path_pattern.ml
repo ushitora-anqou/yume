@@ -5,8 +5,11 @@ type single_pattern =
 
 type t = single_pattern list
 
+(* Split a path into its non-empty segments. Note that [List.tl] must
+   not be used here: it would also drop the first segment of inputs
+   that do not start with a slash (e.g. "*"). *)
 let split_on_slash s =
-  s |> String.split_on_char '/' |> List.tl |> List.filter (( <> ) "")
+  s |> String.split_on_char '/' |> List.filter (( <> ) "")
 
 let of_string (src : string) : t =
   src |> split_on_slash

@@ -4,6 +4,8 @@ let test_parse_path () =
   let open Path_pattern in
   assert (of_string "" = []);
   assert (of_string "/foo/bar/2000" = [ L "foo"; L "bar"; L "2000" ]);
+  (* inputs without a leading slash keep their first segment *)
+  assert (of_string "foo/bar" = [ L "foo"; L "bar" ]);
   assert (
     of_string "/foo/:bar/2000"
     = [ L "foo"; P { pattern = ":bar"; suffix = "" }; L "2000" ]);
@@ -28,6 +30,8 @@ let test_parse_path () =
     = Some [ (":bar", "1") ]);
   assert (perform ~pat:(of_string "/foo/:bar:baz") "/foo/" = None);
   assert (perform ~pat:(of_string "/foo/:bar:baz") "/foo/:baz" = None);
+  (* "OPTIONS *" does not match the root pattern *)
+  assert (perform ~pat:(of_string "/") "*" = None);
   ()
 
 let () =
