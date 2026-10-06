@@ -18,7 +18,11 @@ let write oc s =
 
 (* Send a keepalive chunk consisting of a single 0xff byte. For idle
    connections this is the only way to notice a client-side reset in
-   a timely manner. *)
+   a timely manner. Note that the byte is application data from the
+   client's point of view: only use this for streams where stray
+   bytes are harmless (e.g. delimited binary feeds), not for text
+   protocols such as SSE, where a comment line is the usual
+   keepalive. *)
 let write_keepalive oc = write oc "\xff"
 
 (* Write the final zero-length chunk that terminates the chunked

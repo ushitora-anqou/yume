@@ -190,7 +190,7 @@ let fetch env ?(headers = []) ?(meth = `GET) ?(body = "") ?(sign = None)
     let backtrace = Printexc.get_backtrace () in
     Logs.err (fun m ->
         m "[fetch] %s %s: %s\n%s" meth_s url (Printexc.to_string e) backtrace);
-    Error ()
+    Error (Printexc.to_string e)
 
 exception FetchFailure of (Status.t * Headers.t * string) option
 

@@ -74,8 +74,13 @@ let websocket_handler conn frames_out_fn frame =
             (Some (Websocket.Frame.create ~opcode:Close ~content:"" ()));
           conn.closed <- true;
           Eio.Stream.add conn.recv_stream None
-      | Text | Binary ->
+      | Text ->
           Logs.debug (fun m -> m "Websocket: recv: %s" content);
+          Eio.Stream.add conn.recv_stream (Some content)
+      | Binary ->
+          (* avoid dumping raw bytes to the log *)
+          Logs.debug (fun m -> m "Websocket: recv: %d bytes (binary)"
+                         (String.length content));
           Eio.Stream.add conn.recv_stream (Some content)
       | Ping ->
           frames_out_fn (Some (Websocket.Frame.create ~opcode:Pong ~content ()))

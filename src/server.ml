@@ -119,7 +119,12 @@ let parse_strict_int (s : string) : int =
         else (acc * 10) + i)
       0 s
 
-let param name = function Request { param; _ } -> List.assoc name param
+let param name = function
+  | Request { param; _ } -> (
+      match List.assoc_opt name param with
+      | Some v -> v
+      | None ->
+          invalid_arg (Printf.sprintf "Yume.Server.param: %S not found" name))
 
 let param_opt name = function
   | Request { param; _ } -> List.assoc_opt name param
@@ -193,8 +198,9 @@ let query ?default name req =
                 let f = formdata_exn name req in
                 f.content)
       with
-      | _ when default <> None -> Option.get default
-      | _ -> raise_error_response `Bad_request)
+      | Not_found | Failure _ | ErrorResponse _ when default <> None ->
+          Option.get default
+      | Not_found | Failure _ -> raise_error_response `Bad_request)
 
 let query_opt name r = try Some (query name r) with _ -> None
 
@@ -209,8 +215,14 @@ let query_int ?default name (req : request) : int =
 let query_int_opt name (req : request) : int option =
   query_opt name req |> Option.map strict_int_or_bad_request
 
+(* [header_opt] returns the first value of [name]. Headers may appear
+   multiple times (e.g. Set-Cookie); use [header_all] to collect
+   every value. *)
 let header_opt name : request -> string option = function
   | Request { headers; _ } -> headers |> List.assoc_opt name
+
+let header_all name : request -> string list = function
+  | Request { headers; _ } -> list_assoc_many name headers
 
 let header name (r : request) : string =
   match header_opt name r with None -> failwith "header: none" | Some v -> v
@@ -253,7 +265,9 @@ let parse_body' ~max_size body headers =
   match
     content_type
     |> Option.map (fun s ->
-        s |> String.split_on_char ';' |> List.hd |> String.trim)
+        (* MIME types are case-insensitive *)
+        s |> String.split_on_char ';' |> List.hd |> String.trim
+        |> String.lowercase_ascii)
   with
   | Some "multipart/form-data" ->
       (* FIXME: Currenty all contents are stored on memory.
@@ -517,14 +531,22 @@ let endpoint_of_socket (socket : _ Eio.Net.listening_socket_ty Eio.Resource.t) :
       (* IPv6 literals need enclosing brackets in URLs *)
       let addr = if String.contains addr ':' then "[" ^ addr ^ "]" else addr in
       Printf.sprintf "http://%s:%d" addr port
-  | _ -> assert false
+  | other ->
+      invalid_arg
+        (Printf.sprintf "Yume.Server.endpoint_of_socket: not a TCP socket: %s"
+           (match other with `Unix _ -> "unix" | _ -> "unknown"))
 
 (* Resolve [addr] and [port] into a listen address and start the
    server. *)
 let start_server_on env ~sw ?max_body_size ?error_handler ~addr ~port handler
     k : unit =
   let listen =
-    Eio.Net.getaddrinfo_stream ~service:port env#net addr |> List.hd
+    match Eio.Net.getaddrinfo_stream ~service:port env#net addr with
+    | [] ->
+        invalid_arg
+          (Printf.sprintf
+             "Yume.Server.start_server_on: cannot resolve %s:%s" addr port)
+    | addr :: _ -> addr
   in
   start_server env ~sw ?max_body_size ?error_handler ~listen handler k
 
@@ -730,8 +752,6 @@ module Logger = struct
         add_string buf ("Status: " ^ Status.to_string status);
         Buffer.contents buf
     | _ -> assert false
-
-  let now () = Unix.gettimeofday () |> Ptime.of_float_s |> Option.get
 
   let use ?dump_req_dir (inner_handler : handler) env (req : request) : response
       =
