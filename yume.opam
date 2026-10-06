@@ -18,6 +18,7 @@ depends: [
   "dune" {>= "3.7"}
   "eio"
   "eio_main" {with-test}
+  "fmt"
   "logs"
   "mirage-crypto-rng" {>= "2.0.0"}
   "multipart_form" {>= "0.8.0"}

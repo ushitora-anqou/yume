@@ -376,6 +376,26 @@ let start_server env ~sw ?(listen = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080))
   in
   aux true res
 
+(* The HTTP endpoint URL of a listening socket, e.g.
+   "http://127.0.0.1:8080". *)
+let endpoint_of_socket (socket : _ Eio.Net.listening_socket_ty Eio.Resource.t) :
+    string =
+  match Eio.Net.listening_addr socket with
+  | `Tcp (addr, port) ->
+      let addr = Fmt.to_to_string Eio.Net.Ipaddr.pp addr in
+      (* IPv6 literals need enclosing brackets in URLs *)
+      let addr = if String.contains addr ':' then "[" ^ addr ^ "]" else addr in
+      Printf.sprintf "http://%s:%d" addr port
+  | _ -> assert false
+
+(* Resolve [addr] and [port] into a listen address and start the
+   server. *)
+let start_server_on env ~sw ?error_handler ~addr ~port handler k : unit =
+  let listen =
+    Eio.Net.getaddrinfo_stream ~service:port env#net addr |> List.hd
+  in
+  start_server env ~sw ?error_handler ~listen handler k
+
 (* Middleware Router *)
 module Router = struct
   type route = Method.t * string * handler

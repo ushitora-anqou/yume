@@ -364,6 +364,28 @@ let test_cors_allow_all () =
         Eio.Switch.fail sw Exit_normally)
   with Exit_normally -> ()
 
+let test_start_server_on () =
+  Eio_main.run @@ fun env ->
+  Eio.Time.with_timeout_exn env#clock 3.0 @@ fun () ->
+  let handler =
+    let open Yume.Server in
+    Router.(use [ get "/" (fun _ _ -> respond_html "hello") ] default_handler)
+  in
+  try
+    Eio.Switch.run @@ fun sw ->
+    Yume.Server.start_server_on env ~sw ~addr:"localhost" ~port:"0" handler
+      (fun socket ->
+        let endpoint = Yume.Server.endpoint_of_socket socket in
+        assert (String.starts_with ~prefix:"http://" endpoint);
+
+        let resp = Yume.Client.get env ~sw (endpoint ^ "/") in
+        assert (Yume.Client.Response.status resp = `OK);
+        let body = Yume.Client.Response.drain resp in
+        assert (body = "hello");
+
+        Eio.Switch.fail sw Exit_normally)
+  with Exit_normally -> ()
+
 let () =
   let open Alcotest in
   Common.setup_logs ();
@@ -377,4 +399,5 @@ let () =
           test_case "large image" `Quick (test_formdata_image test_image_large);
         ] );
       ("cors", [ test_case "allow all" `Quick test_cors_allow_all ]);
+      ("start_server_on", [ test_case "endpoint" `Quick test_start_server_on ]);
     ]
