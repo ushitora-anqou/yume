@@ -631,6 +631,9 @@ let test_param_int () =
         (* non-strict formats must be rejected *)
         test_param (url ^ "/0x12?n=34") `Bad_request;
         test_param (url ^ "/1_2?n=34") `Bad_request;
+        (* overflow and negative values must be rejected *)
+        test_param (url ^ "/99999999999999999999?n=34") `Bad_request;
+        test_param (url ^ "/-12?n=34") `Bad_request;
         (* missing required query *)
         test_param (url ^ "/12") `Bad_request;
 

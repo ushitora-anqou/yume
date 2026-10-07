@@ -7,7 +7,7 @@ exception Invalid of string
 let fail msg = raise (Invalid msg)
 
 let strict_int s =
-  match Server.parse_strict_int s with
+  match Strict_int.parse_strict_int s with
   | i -> i
   | exception Failure msg -> fail msg
 
