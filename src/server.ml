@@ -531,7 +531,43 @@ let start_server env ~sw ?(max_body_size = default_max_body_size)
         let error_handler = Option.get error_handler in
         error_handler ~req ~status ~headers ~body |> aux false
   in
-  aux true res
+  (* RFC 9110 9.5: a final response sent before the request body has
+     been read must close the connection, because the unread body
+     bytes would be parsed as a bogus next request on a keep-alive
+     connection. Also honor a "Connection: close" request on expert
+     responses that hardcode keep-alive (respond_chunked). Closing is
+     done by raising [Bare_server.Close_connection] after the response
+     handler ran: Cohttp_eio's keep-alive loop is driven by the
+     request headers, so a "connection: close" response header alone
+     would not stop it. An explicit [connection: close] request header
+     is required for the first part: [is_keep_alive] is also false for
+     upgrade requests ("Connection: Upgrade"), whose connection must
+     of course stay open. *)
+  let (Request { bare_req; body = req_body; _ }) = req in
+  let body_unread () =
+    Http.Request.has_body bare_req = `Yes && not (Lazy.is_val req_body)
+  in
+  let request_wants_close () =
+    match Http.Header.connection (Http.Request.headers bare_req) with
+    | Some `Close -> true
+    | _ -> false
+  in
+  match aux true res with
+  | ( `Expert (r, handler) ) as resp ->
+      if
+        request_wants_close ()
+        || (Status.is_error (Http.Response.status r) && body_unread ())
+      then
+        let headers =
+          Http.Header.replace r.headers "connection" "close"
+        in
+        let handler ic oc =
+          handler ic oc;
+          raise Bare_server.Close_connection
+        in
+        `Expert ({ r with Cohttp.Response.headers = headers }, handler)
+      else resp
+  | resp -> resp
 
 (* The HTTP endpoint URL of a listening socket, e.g.
    "http://127.0.0.1:8080". *)

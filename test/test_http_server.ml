@@ -369,6 +369,27 @@ let test_body_parsing () =
         in
         assert (String.starts_with ~prefix:"HTTP/1.1 400" resp);
 
+        (* a 413 answered before the body is read must close the
+           connection (RFC 9110 9.5): the unread body bytes must not
+           be parsed as a bogus next request, and the reply must
+           contain exactly one status line *)
+        let socket = Eio.Net.connect ~sw env#net listen_addr in
+        Eio.Buf_write.with_flow socket (fun oc ->
+            Eio.Buf_write.string oc
+              "POST /raw HTTP/1.1\r\nHost: localhost\r\nContent-Length: \
+               65\r\n\r\n01234567890123456789012345678901234567890123456789012345678901234");
+        let ic = Eio.Buf_read.of_flow socket ~max_size:65536 in
+        let resp = Eio.Buf_read.take_all ic in
+        let headers, _ = split_headers_body resp in
+        assert (String.starts_with ~prefix:"HTTP/1.1 413" headers);
+        assert (header_value headers "connection" = Some "close");
+        let status_lines =
+          String.split_on_char '\n' resp
+          |> List.filter (fun line ->
+                 String.starts_with ~prefix:"HTTP/1.1" line)
+        in
+        assert (List.length status_lines = 1);
+
         Eio.Switch.fail sw Common.Exit_normally)
   with Common.Exit_normally -> ()
 
@@ -511,6 +532,17 @@ let test_framing_headers () =
         assert (body = "plain");
         assert (header_values headers "transfer-encoding" = []);
         assert (header_values headers "content-length" = [ "5" ]);
+
+        (* a "Connection: close" request overrides respond_chunked's
+           hardcoded keep-alive *)
+        let resp =
+          raw_request ~sw env listen_addr
+            "GET /chunked HTTP/1.1\r\nHost: localhost\r\nConnection: \
+             close\r\n\r\n"
+        in
+        let headers, _ = split_headers_body resp in
+        assert (String.starts_with ~prefix:"HTTP/1.1 200" headers);
+        assert (header_value headers "connection" = Some "close");
 
         Eio.Switch.fail sw Common.Exit_normally)
   with Common.Exit_normally -> ()

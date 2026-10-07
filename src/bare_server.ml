@@ -28,6 +28,13 @@ let respond ~(status : Status.t) ~(headers : Headers.t) ~(body : string) =
        ~body:(Cohttp_eio.Body.of_string body)
        ())
 
+(* Raised from an expert response handler after the response has been
+   flushed, to make the server close the connection. Used when the
+   request body was not read and would desynchronize a keep-alive
+   connection (RFC 9110 9.5): [Cohttp_eio.Server.run] passes it to
+   [on_error], which closes the connection instead of logging. *)
+exception Close_connection
+
 let start_server ~listen ~sw env k callback =
   let callback _conn (req : Request.t) (body : Body.t) =
     (* Invoke the handler *)
@@ -41,9 +48,12 @@ let start_server ~listen ~sw env k callback =
             (Printexc.get_backtrace ()));
       respond ~status:`Internal_server_error ~body:"" ~headers:[]
   in
-  let on_error e =
-    Logs.err (fun m ->
-        m "Cohttp_eio.Server.run on_error triggered: %s" (Printexc.to_string e))
+  let on_error = function
+    | Close_connection -> Logs.debug (fun m -> m "closing connection")
+    | e ->
+        Logs.err (fun m ->
+            m "Cohttp_eio.Server.run on_error triggered: %s"
+              (Printexc.to_string e))
   in
   let server = Cohttp_eio.Server.make_response_action ~callback () in
   let socket =
