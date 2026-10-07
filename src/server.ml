@@ -325,9 +325,12 @@ let default_handler : handler =
 
 (* Run [handler], converting exceptions into error responses:
    [ErrorResponse] carries its own status, and any other exception
-   becomes a 500. *)
+   becomes a 500. Cancellation is re-raised: converting it into a
+   response would break eio's cancellation propagation when the server
+   shuts down mid-handler. *)
 let run_handler (handler : handler) env (req : request) : response =
   try handler env req with
+  | (Eio.Cancel.Cancelled _) as e -> raise e
   | ErrorResponse { status; body } ->
       Logs.debug (fun m ->
           m "Error response raised: %s\n%s" (Status.to_string status)
