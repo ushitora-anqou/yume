@@ -314,6 +314,8 @@ let test_body_parsing () =
         [
           post "/echo" (fun _ req -> query "msg" req |> respond);
           post "/raw" (fun _ req -> body req |> respond);
+          (* a handler that never reads the request body *)
+          post "/ping" (fun _ _ -> respond "pong");
         ])
       default_handler
   in
@@ -382,6 +384,49 @@ let test_body_parsing () =
         let resp = Eio.Buf_read.take_all ic in
         let headers, _ = split_headers_body resp in
         assert (String.starts_with ~prefix:"HTTP/1.1 413" headers);
+        assert (header_value headers "connection" = Some "close");
+        let status_lines =
+          String.split_on_char '\n' resp
+          |> List.filter (fun line ->
+                 String.starts_with ~prefix:"HTTP/1.1" line)
+        in
+        assert (List.length status_lines = 1);
+
+        (* (a) RFC 9110 8.6: a non-decimal Content-Length is answered
+           with 400 *and the connection is closed*; a request smuggled
+           behind it must not be executed *)
+        let socket = Eio.Net.connect ~sw env#net listen_addr in
+        Eio.Buf_write.with_flow socket (fun oc ->
+            Eio.Buf_write.string oc
+              "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: \
+               abc\r\n\r\nGET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        Eio.Flow.shutdown socket `Send;
+        let ic = Eio.Buf_read.of_flow socket ~max_size:65536 in
+        let resp = Eio.Buf_read.take_all ic in
+        let headers, _ = split_headers_body resp in
+        assert (String.starts_with ~prefix:"HTTP/1.1 400" headers);
+        assert (header_value headers "connection" = Some "close");
+        let status_lines =
+          String.split_on_char '\n' resp
+          |> List.filter (fun line ->
+                 String.starts_with ~prefix:"HTTP/1.1" line)
+        in
+        assert (List.length status_lines = 1);
+
+        (* (b) RFC 9110 9.5: a handler that never reads the body must
+           not leave the connection reusable; a GET smuggled as the
+           body must not be executed *)
+        let socket = Eio.Net.connect ~sw env#net listen_addr in
+        Eio.Buf_write.with_flow socket (fun oc ->
+            Eio.Buf_write.string oc
+              "POST /ping HTTP/1.1\r\nHost: localhost\r\nContent-Length: \
+               40\r\n\r\nGET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        Eio.Flow.shutdown socket `Send;
+        let ic = Eio.Buf_read.of_flow socket ~max_size:65536 in
+        let resp = Eio.Buf_read.take_all ic in
+        let headers, body = split_headers_body resp in
+        assert (String.starts_with ~prefix:"HTTP/1.1 200" headers);
+        assert (body = "pong");
         assert (header_value headers "connection" = Some "close");
         let status_lines =
           String.split_on_char '\n' resp

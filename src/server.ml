@@ -522,18 +522,32 @@ let start_server env ~sw ?(max_body_size = default_max_body_size)
   (* RFC 9110 9.5: a final response sent before the request body has
      been read must close the connection, because the unread body
      bytes would be parsed as a bogus next request on a keep-alive
-     connection. Also honor a "Connection: close" request on expert
+     connection. The same applies to a handler that never reads the
+     body (any status), and to a Content-Length that is not a strict
+     decimal (RFC 9110 8.6: reject with 400 *and close*, or process as
+     length 0; keeping the connection open lets smuggled requests
+     run). Also honor a "Connection: close" request on expert
      responses that hardcode keep-alive (respond_chunked). Closing is
      done by raising [Bare_server.Close_connection] after the response
      handler ran: Cohttp_eio's keep-alive loop is driven by the
      request headers, so a "connection: close" response header alone
      would not stop it. An explicit [connection: close] request header
-     is required for the first part: [is_keep_alive] is also false for
+     is required for the last part: [is_keep_alive] is also false for
      upgrade requests ("Connection: Upgrade"), whose connection must
      of course stay open. *)
   let (Request { bare_req; body = req_body; _ }) = req in
+  (* framing bytes the response leaves unconsumed: an unread body, or
+     a Content-Length whose value is not a strict decimal (the framing
+     is undefined; [check_request_body] already answered such requests
+     with 400). Note that a body of length 0 is [`No] and never
+     closes the connection. *)
   let body_unread () =
     Http.Request.has_body bare_req = `Yes && not (Lazy.is_val req_body)
+  in
+  let invalid_content_length () =
+    match headers |> List.assoc_opt `Content_length with
+    | Some v -> parse_strict_int_opt v = None
+    | None -> false
   in
   let request_wants_close () =
     match Http.Header.connection (Http.Request.headers bare_req) with
@@ -544,7 +558,8 @@ let start_server env ~sw ?(max_body_size = default_max_body_size)
   | ( `Expert (r, handler) ) as resp ->
       if
         request_wants_close ()
-        || (Status.is_error (Http.Response.status r) && body_unread ())
+        || body_unread ()
+        || invalid_content_length ()
       then
         let headers =
           Http.Header.replace r.headers "connection" "close"
