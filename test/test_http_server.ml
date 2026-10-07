@@ -781,7 +781,8 @@ let test_cors_allow_headers () =
         [
           make "/*" ~methods:[ `GET; `POST ] ~origin:"https://example.com"
             ~expose:[ `Etag ]
-            ~allow_headers:[ `Content_type; `Authorization ]
+            ~allow_headers:
+              [ `Content_type; `Authorization; `Raw "X-Requested-With" ]
             ();
         ])
       @@ Router.(use [ get "/" (fun _ _ -> respond_html "hello") ] default_handler)
@@ -817,6 +818,17 @@ let test_cors_allow_headers () =
         assert (
           List.assoc `Access_control_allow_headers hs
           = "content-type, authorization");
+        (* a mixed-case `Raw allowlist entry matches the lowercased
+           request *)
+        let hs =
+          preflight
+            [
+              ("access-control-request-method", "POST");
+              ("access-control-request-headers", "x-requested-with");
+            ]
+        in
+        assert (
+          List.assoc `Access_control_allow_headers hs = "x-requested-with");
         (* a header outside the allowlist is not granted *)
         let hs =
           preflight

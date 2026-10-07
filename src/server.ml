@@ -675,6 +675,13 @@ module Cors = struct
   let make target ?(origin = "*") ~methods ?(expose = [])
       ?(allow_headers = []) () =
     let target_pat = Path_pattern.of_string target in
+    (* Normalize so that e.g. `Raw "X-Requested-With" matches the
+       lowercased names produced by Header.name_of_string on the
+       preflight's Access-Control-Request-Headers. *)
+    let allow_headers =
+      allow_headers
+      |> List.map (fun h -> Header.name_of_string (Header.string_of_name h))
+    in
     { target; target_pat; methods; origin; expose; allow_headers }
 
   let use (src : t list) (inner_handler : handler) env (req : request) :
