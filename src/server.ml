@@ -330,20 +330,30 @@ let run_handler (handler : handler) env (req : request) : response =
             (Printexc.get_backtrace ()));
       respond ~status:`Internal_server_error ""
 
-(* Validate the Content-Length header before invoking the handler: it
-   must be a strict decimal within [max_body_size]. Rejecting early
-   keeps oversized or malformed requests from ever being buffered. *)
+(* Validate the request framing before invoking the handler:
+   - a Transfer-Encoding that the underlying server does not
+     recognize as chunked (its final coding is not "chunked", e.g.
+     "gzip" or "gzip, chunked") leaves the body length undefined;
+     RFC 9112 6.1 requires rejecting such a request with 400;
+   - the Content-Length must be a strict decimal within
+     [max_body_size].
+   Rejecting early keeps malformed requests from ever being buffered
+   or answered on a connection whose framing is undefined. *)
 let check_request_body ~max_body_size (req : request) : unit =
   match req with
-  | Request { headers; _ } -> (
-      match List.assoc_opt `Content_length headers with
-      | None -> ()
-      | Some v -> (
-          match parse_strict_int_opt v with
-          | Some cl when cl > max_body_size ->
-              raise_error_response `Request_entity_too_large
-          | Some _ -> ()
-          | None -> raise_error_response `Bad_request))
+  | Request { headers; bare_req; _ } -> (
+      match List.assoc_opt `Transfer_encoding headers with
+      | Some _ when Http.Request.has_body bare_req <> `Yes ->
+          raise_error_response `Bad_request
+      | _ -> (
+          match List.assoc_opt `Content_length headers with
+          | None -> ()
+          | Some v -> (
+              match parse_strict_int_opt v with
+              | Some cl when cl > max_body_size ->
+                  raise_error_response `Request_entity_too_large
+              | Some _ -> ()
+              | None -> raise_error_response `Bad_request)))
 
 type ws_conn = Bare_server.ws_conn
 
@@ -552,6 +562,14 @@ let start_server env ~sw ?(max_body_size = default_max_body_size)
     | Some v -> parse_strict_int_opt v = None
     | None -> false
   in
+  (* a Transfer-Encoding that the underlying server does not recognize
+     as chunked leaves the framing undefined (RFC 9112 6.1;
+     [check_request_body] answered such requests with 400) *)
+  let invalid_transfer_encoding () =
+    match headers |> List.assoc_opt `Transfer_encoding with
+    | Some _ -> Http.Request.has_body bare_req <> `Yes
+    | None -> false
+  in
   let request_wants_close () =
     match Http.Header.connection (Http.Request.headers bare_req) with
     | Some `Close -> true
@@ -563,6 +581,7 @@ let start_server env ~sw ?(max_body_size = default_max_body_size)
         request_wants_close ()
         || body_unread ()
         || invalid_content_length ()
+        || invalid_transfer_encoding ()
       then
         let headers =
           Http.Header.replace r.headers "connection" "close"

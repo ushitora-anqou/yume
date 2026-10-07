@@ -435,6 +435,48 @@ let test_body_parsing () =
         in
         assert (List.length status_lines = 1);
 
+        (* (c) RFC 9112 6.1: a Transfer-Encoding whose final coding is
+           not chunked must be rejected with 400 and the connection
+           closed; a request smuggled behind it must not run *)
+        let socket = Eio.Net.connect ~sw env#net listen_addr in
+        Eio.Buf_write.with_flow socket (fun oc ->
+            Eio.Buf_write.string oc
+              "POST /ping HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: \
+               gzip\r\n\r\nGET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        Eio.Flow.shutdown socket `Send;
+        let ic = Eio.Buf_read.of_flow socket ~max_size:65536 in
+        let resp = Eio.Buf_read.take_all ic in
+        let headers, _ = split_headers_body resp in
+        assert (String.starts_with ~prefix:"HTTP/1.1 400" headers);
+        assert (header_value headers "connection" = Some "close");
+        let status_lines =
+          String.split_on_char '\n' resp
+          |> List.filter (fun line ->
+                 String.starts_with ~prefix:"HTTP/1.1" line)
+        in
+        assert (List.length status_lines = 1);
+
+        (* (d) a Transfer-Encoding coding sequence ("gzip, chunked")
+           that the underlying server cannot frame is rejected the
+           same way; the chunk bytes must not run as a request *)
+        let socket = Eio.Net.connect ~sw env#net listen_addr in
+        Eio.Buf_write.with_flow socket (fun oc ->
+            Eio.Buf_write.string oc
+              "POST /ping HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: \
+               gzip, chunked\r\n\r\n4\r\nABCD\r\n0\r\n\r\n");
+        Eio.Flow.shutdown socket `Send;
+        let ic = Eio.Buf_read.of_flow socket ~max_size:65536 in
+        let resp = Eio.Buf_read.take_all ic in
+        let headers, _ = split_headers_body resp in
+        assert (String.starts_with ~prefix:"HTTP/1.1 400" headers);
+        assert (header_value headers "connection" = Some "close");
+        let status_lines =
+          String.split_on_char '\n' resp
+          |> List.filter (fun line ->
+                 String.starts_with ~prefix:"HTTP/1.1" line)
+        in
+        assert (List.length status_lines = 1);
+
         Eio.Switch.fail sw Common.Exit_normally)
   with Common.Exit_normally -> ()
 
