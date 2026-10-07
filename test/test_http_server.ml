@@ -444,6 +444,9 @@ let test_framing_headers () =
                   [ (`Content_length, "999"); (`Content_type, "text/plain") ]
                 ~content_type:"application/octet-stream"
                 (fun _ic oc -> Chunked.write oc "data"));
+          get "/empty" (fun _ _ ->
+              respond ~status:`No_content
+                ~headers:[ (`Content_length, "0") ] "");
         ])
       default_handler
   in
@@ -483,6 +486,17 @@ let test_framing_headers () =
         assert (header_values headers "transfer-encoding" = [ "chunked" ]);
         assert (
           header_values headers "content-type" = [ "application/octet-stream" ]);
+
+        (* RFC 9110 8.6: a 204 response carries no Content-Length,
+           even one supplied (wrongly) by the handler *)
+        let resp =
+          raw_request ~sw env listen_addr
+            "GET /empty HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        in
+        let headers, body = split_headers_body resp in
+        assert (String.starts_with ~prefix:"HTTP/1.1 204" headers);
+        assert (body = "");
+        assert (header_values headers "content-length" = []);
 
         Eio.Switch.fail sw Common.Exit_normally)
   with Common.Exit_normally -> ()

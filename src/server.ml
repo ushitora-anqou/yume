@@ -430,9 +430,13 @@ let respond_expert ~(bare_req : Bare_server.Request.t) ~(status : Status.t)
         Http.Header.add headers "connection"
           (if keep_alive then "keep-alive" else "close")
   in
+  (* RFC 9110 8.6: a Content-Length must not be sent on a 1xx or 204
+     response. *)
   let headers =
-    Http.Header.replace headers "content-length"
-      (string_of_int (String.length body))
+    if Http.Status.body_allowed status then
+      Http.Header.replace headers "content-length"
+        (string_of_int (String.length body))
+    else Http.Header.remove headers "content-length"
   in
   `Expert
     ( Http.Response.make ~status ~headers (),
