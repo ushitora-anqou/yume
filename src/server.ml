@@ -334,7 +334,12 @@ let run_handler (handler : handler) env (req : request) : response =
    - a Transfer-Encoding that the underlying server does not
      recognize as chunked (its final coding is not "chunked", e.g.
      "gzip" or "gzip, chunked") leaves the body length undefined;
-     RFC 9112 6.1 requires rejecting such a request with 400;
+     RFC 9112 6.1 requires rejecting such a request with 400. Note
+     that [has_body] is [`No] for body-less methods (GET, HEAD, ...)
+     regardless of the headers, so a "Transfer-Encoding: chunked" on
+     such a request is rejected too: the underlying server builds no
+     body reader for it, and its bytes would be smuggled as the next
+     request;
    - the Content-Length must be a strict decimal within
      [max_body_size].
    Rejecting early keeps malformed requests from ever being buffered
