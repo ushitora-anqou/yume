@@ -183,7 +183,9 @@ let parse_signature_header (src : string) : (signature_header, string) result
 
 (* Check the Digest header against [body] when both are present. A
    mismatch means the body was tampered with, independently of the
-   signature itself. *)
+   signature itself. RFC 3230 allows several digests to be listed
+   (e.g. "Digest: md5=..., sha-256=..."); algorithm tokens are
+   case-insensitive and items may carry surrounding whitespace. *)
 let digest_matches (headers : Headers.t) (body : string option) : bool =
   match (body, List.assoc_opt `Digest headers) with
   | Some body, Some declared ->
@@ -191,7 +193,20 @@ let digest_matches (headers : Headers.t) (body : string option) : bool =
         body |> Digestif.SHA256.digest_string |> Digestif.SHA256.to_raw_string
         |> Base64.encode_exn
       in
-      String.equal declared ("SHA-256=" ^ computed)
+      let expected = "sha-256=" ^ computed in
+      let matches item =
+        (* only the algorithm token is case-insensitive; the base64
+           value is not *)
+        match String.index_opt item '=' with
+        | Some i ->
+            String.equal
+              (String.lowercase_ascii (String.sub item 0 i) ^ "="
+              ^ String.sub item (i + 1) (String.length item - i - 1))
+              expected
+        | None -> false
+      in
+      declared |> String.split_on_char ','
+      |> List.exists (fun item -> matches (String.trim item))
   | _ -> true
 
 type verify_error = [

@@ -252,6 +252,24 @@ QwIDAQAB
    with
    | Error `DigestMismatch -> ()
    | _ -> assert false);
+  (* RFC 3230: additional algorithms, surrounding whitespace and a
+     lowercase algorithm token are accepted; the failure below comes
+     from the bogus signature, not from DigestMismatch *)
+  (match
+     Signature.verify ~pub_key ~algorithm:"rsa-sha256"
+       ~signed_headers:[ "host" ] ~signature:"c2ln=="
+       ~headers:
+         [
+           (`Host, "example.com");
+           (* digest of "tampered" *)
+           ( `Digest,
+             "MD5=deadbeef,  sha-256=0SG+MQMAe0Ht+W+CYpJfjH1hiUr+mgQYQ7Yx9pRFvFc=" );
+         ]
+       ~meth:`POST ~path:"/" ~body:(Some "tampered")
+   with
+   | Error (`VerificationFailure _) -> ()
+   | Error `DigestMismatch -> assert false
+   | _ -> assert false);
   (* signed header missing from the request *)
   (match
      Signature.verify ~pub_key ~algorithm:"rsa-sha256"
