@@ -91,6 +91,9 @@ let respond_cstruct ?(headers = []) ~content_type (body : Cstruct.t) :
       (string_of_int (Cstruct.length body))
   in
   let headers = Http.Header.replace headers "content-type" content_type in
+  (* This response sends an unchunked body; a caller-supplied
+     transfer-encoding would corrupt the framing (RFC 9112 6.1). *)
+  let headers = Http.Header.remove headers "transfer-encoding" in
   let handler _ic oc =
     Eio.Buf_write.schedule_cstruct oc body;
     Eio.Buf_write.flush oc

@@ -37,16 +37,19 @@ exception Close_connection
 
 let start_server ~listen ~sw env k callback =
   let callback _conn (req : Request.t) (body : Body.t) =
-    (* Invoke the handler *)
-    try callback req body
-    with e ->
-      let uri = Request.uri req in
-      let meth = Request.meth req in
-      Logs.err (fun m ->
-          m "Unexpected exception: %s %s: %s\n%s" (Method.to_string meth)
-            (Uri.to_string uri) (Printexc.to_string e)
-            (Printexc.get_backtrace ()));
-      respond ~status:`Internal_server_error ~body:"" ~headers:[]
+    (* Invoke the handler. Cancellation is re-raised: converting it
+       into a 500 response would break eio's cancellation propagation
+       at server shutdown. *)
+    try callback req body with
+    | (Eio.Cancel.Cancelled _) as e -> raise e
+    | e ->
+        let uri = Request.uri req in
+        let meth = Request.meth req in
+        Logs.err (fun m ->
+            m "Unexpected exception: %s %s: %s\n%s" (Method.to_string meth)
+              (Uri.to_string uri) (Printexc.to_string e)
+              (Printexc.get_backtrace ()));
+        respond ~status:`Internal_server_error ~body:"" ~headers:[]
   in
   let on_error = function
     | Close_connection -> Logs.debug (fun m -> m "closing connection")

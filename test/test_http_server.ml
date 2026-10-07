@@ -501,7 +501,8 @@ let test_framing_headers () =
           get "/cstruct" (fun _ _ ->
               respond_cstruct
                 ~headers:
-                  [ (`Content_length, "999"); (`Content_type, "text/plain") ]
+                  [ (`Content_length, "999"); (`Content_type, "text/plain");
+                    (`Transfer_encoding, "chunked") ]
                 ~content_type:"application/octet-stream"
                 (Cstruct.of_string "hello cstruct"));
           get "/chunked" (fun _ _ ->
@@ -541,6 +542,7 @@ let test_framing_headers () =
         assert (body = "hello cstruct");
         assert (header_values headers "content-length" = [ "13" ]);
         assert (header_values headers "content-type" = [ "application/octet-stream" ]);
+        assert (header_values headers "transfer-encoding" = []);
 
         (* chunked framing: no Content-Length at all *)
         let socket = Eio.Net.connect ~sw env#net listen_addr in
