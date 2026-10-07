@@ -447,6 +447,8 @@ let test_framing_headers () =
           get "/empty" (fun _ _ ->
               respond ~status:`No_content
                 ~headers:[ (`Content_length, "0") ] "");
+          get "/te" (fun _ _ ->
+              respond ~headers:[ (`Transfer_encoding, "chunked") ] "plain");
         ])
       default_handler
   in
@@ -497,6 +499,18 @@ let test_framing_headers () =
         assert (String.starts_with ~prefix:"HTTP/1.1 204" headers);
         assert (body = "");
         assert (header_values headers "content-length" = []);
+
+        (* a caller-supplied transfer-encoding must not survive on a
+           plain respond (the body is sent unchunked) *)
+        let resp =
+          raw_request ~sw env listen_addr
+            "GET /te HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        in
+        let headers, body = split_headers_body resp in
+        assert (String.starts_with ~prefix:"HTTP/1.1 200" headers);
+        assert (body = "plain");
+        assert (header_values headers "transfer-encoding" = []);
+        assert (header_values headers "content-length" = [ "5" ]);
 
         Eio.Switch.fail sw Common.Exit_normally)
   with Common.Exit_normally -> ()

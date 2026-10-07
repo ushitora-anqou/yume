@@ -438,6 +438,10 @@ let respond_expert ~(bare_req : Bare_server.Request.t) ~(status : Status.t)
         (string_of_int (String.length body))
     else Http.Header.remove headers "content-length"
   in
+  (* This response sends an unchunked body; a caller-supplied
+     transfer-encoding would corrupt the framing (RFC 9112 6.1
+     forbids Content-Length together with Transfer-Encoding). *)
+  let headers = Http.Header.remove headers "transfer-encoding" in
   `Expert
     ( Http.Response.make ~status ~headers (),
       fun _ic oc ->
