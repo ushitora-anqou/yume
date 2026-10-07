@@ -360,6 +360,15 @@ let test_body_parsing () =
         in
         assert (String.starts_with ~prefix:"HTTP/1.1 413" resp);
 
+        (* a POST with neither Content-Length nor Transfer-Encoding has
+           a zero-length body (RFC 9112 6.3) and must not block: the
+           handler reads the body via query, which used to wait for EOF
+           on the connection *)
+        let resp =
+          raw "POST /echo HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        in
+        assert (String.starts_with ~prefix:"HTTP/1.1 400" resp);
+
         Eio.Switch.fail sw Common.Exit_normally)
   with Common.Exit_normally -> ()
 

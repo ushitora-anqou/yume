@@ -298,13 +298,17 @@ let parse_body' ~max_size body headers =
       (Some raw_body, Form (Uri.query_of_encoded raw_body))
 
 (* Parse the request body, reading at most [max_body_size] bytes into
-   memory. The body is only read for methods that carry one
-   ([Http.Request.has_body]); in particular requests without a
-   Content-Length header (e.g. chunked) are read too. *)
+   memory. The body is only read for requests that carry one
+   ([Http.Request.has_body]); in particular requests with a
+   Transfer-Encoding header (e.g. chunked) are read too. A request
+   with neither Content-Length nor Transfer-Encoding ([`Unknown]) has
+   a zero-length body per RFC 9112 6.3; reading it would block until
+   the client closes a keep-alive connection, because the underlying
+   body reader for [`Unknown] reads until EOF. *)
 let parse_body ~max_body_size ~bare_req ~body ~headers =
   match Http.Request.has_body bare_req with
-  | `No -> (Some "", Form [])
-  | `Yes | `Unknown -> (
+  | `No | `Unknown -> (Some "", Form [])
+  | `Yes -> (
       match List.assoc_opt `Content_length headers with
       | Some v -> (
           match parse_strict_int_opt v with
