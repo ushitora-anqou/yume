@@ -45,6 +45,10 @@ let test_is_valid () =
   valid ~file_size:1000 [ `Both (5, 3) ] false;
   valid ~file_size:1000 [ `Both (0, 100); `Both (200, 300) ] true;
   valid ~file_size:1000 [ `Both (0, 100); `Both (0, 1000) ] true;
+  (* a suffix range on an empty representation is unsatisfiable *)
+  valid ~file_size:0 [ `End 5 ] false;
+  valid ~file_size:0 [] true;
+  valid ~file_size:0 [ `Both (0, 5) ] false;
   ()
 
 let test_response_values () =

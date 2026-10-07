@@ -38,12 +38,15 @@ let clamp_last ~file_size n = min n (file_size - 1)
 
 (* Check whether all ranges are satisfiable against a file of
    [file_size] bytes. A last-byte-pos beyond the end is satisfiable
-   (clamped); an unsatisfiable first-byte-pos is not. *)
+   (clamped); an unsatisfiable first-byte-pos is not. A suffix range
+   on an empty representation is unsatisfiable (RFC 9110 14.1.1: it
+   would denote a zero-byte range, and there is no valid Content-Range
+   for it). *)
 let is_valid ~file_size (ranges : t list) : bool =
   let rec loop = function
     | [] -> true
     | `Start start :: _ when start < 0 || start >= file_size -> false
-    | `End end_ :: _ when end_ <= 0 -> false
+    | `End end_ :: _ when end_ <= 0 || file_size = 0 -> false
     | `Both (start, end_) :: _
       when start < 0 || end_ < 0 || start >= file_size || start > end_ ->
         false
